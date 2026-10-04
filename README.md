@@ -49,3 +49,74 @@ KAMP 제조AI데이터셋으로 중소 제조기업의 문제를 해결하거나
 - [위비티 대회 안내](https://www.wevity.com/?c=find&gbn=viewok&gp=28&ix=110622&s=1)
 
 2026년 9월 9일 확인 기준입니다. 공식 페이지의 접근 제한으로 공개된 재게시 공고를 바탕으로 요약했습니다. 세부 진행 일정, 제출물, 평가 지표는 공식 공고와 후속 안내를 확인하세요.
+
+---
+
+## 프로젝트 디렉터리 구조
+
+```text
+KAMP-Competition/
+├── .vscode/
+│   └── extensions.json         # VS Code 권장 확장 (Python, Jupyter)
+├── notebooks/                  # 개인별 작업 노트북
+│   └── kjh/                    # kjh 브랜치 분석 노트북
+│       └── 01_data_overview.ipynb
+├── src/                        # 공통 재사용 소스 코드
+│   ├── __init__.py
+│   ├── config.py               # .env 기반 데이터 및 프로젝트 경로 관리 (pathlib)
+│   ├── load.py                 # 인코딩 자동 감지 및 안전한 데이터 로딩 유틸리티
+│   └── viz.py                  # 한글 폰트(Malgun Gothic) 및 마이너스 기호 깨짐 방지 설정
+├── reports/                    # 분석 산출물 (수치 요약 및 그래프)
+│   ├── column_summary.csv      # 컬럼 프로파일 통계 요약표 (원본 데이터 미포함)
+│   └── figures/                # 결측치 시각화 및 주요 플롯
+├── .env.example                # 환경 변수 예시 파일 (DATA_DIR 경로 설정 안내)
+├── .env                        # 로컬 환경 변수 설정 (Git 커밋 금지)
+├── .gitignore                  # 원본 데이터, .env, 대용량 파일 등 추적 제외
+├── .gitattributes              # 개행 문자 자동 처리 (* text=auto)
+├── environment.yml             # 동일 분석 환경 재현용 Conda 설정 파일
+└── README.md                   # 프로젝트 및 환경 세팅 가이드
+```
+
+### 각 디렉터리 용도
+- **`src/`**: 노트북 및 스크립트 전반에서 재사용할 모듈(설정, 데이터 로딩, 한글 시각화 등)을 정의합니다.
+- **`notebooks/`**: 팀원별 EDA 및 실험 노트북을 관리합니다. (Git에는 `nbstripout`을 통해 결과 셀이 자동으로 비워진 상태로 깔끔하게 커밋됩니다.)
+- **`reports/`**: 원본 데이터는 레포에 포함되지 않으므로, 분석 결과 통계치(`column_summary.csv`)와 그림(`figures/`)만 버전 관리합니다.
+
+---
+
+## 팀원용 환경 재현 방법 (Quickstart)
+
+모든 팀원은 동일한 Python 및 패키지 버전을 사용하여 환경 차이로 인한 버그를 방지합니다.
+
+1. **저장소 복제 및 브랜치 이동**
+   ```bash
+   git clone https://github.com/jgi0117/KAMP-Competition.git
+   cd KAMP-Competition
+   git checkout kjh   # 또는 본인 작업 브랜치
+   ```
+
+2. **Conda 가상환경 생성 및 활성화**
+   ```bash
+   conda env create -f environment.yml
+   conda activate power-peak
+   ```
+
+3. **환경 변수(.env) 설정**
+   - `.env.example` 파일을 복사하여 `.env`를 만듭니다.
+   - 본인의 로컬 PC 원본 데이터가 위치한 경로를 입력합니다.
+   ```bash
+   # .env 내용 예시
+   DATA_DIR=D:/data/resource_opt
+   ```
+
+4. **Jupyter 커널 등록 및 Git 노트북 출력 제거 필터 설치**
+   ```bash
+   python -m ipykernel install --user --name power-peak --display-name "Python (power-peak)"
+   nbstripout --install
+   ```
+
+5. **VS Code 실행 및 커널 선택**
+   - VS Code에서 `KAMP-Competition` 폴더를 엽니다.
+   - `Ctrl + Shift + P` → `Python: Select Interpreter` → `power-peak` 선택
+   - 노트북(`.ipynb`)을 열고 우측 상단 커널에서 `Python (power-peak)` 선택
+
