@@ -1,83 +1,226 @@
-# 제조 생산데이터 기반 전력사용량 예측 모델 및 평가 지표 선정
+"""Append the experiment design and clearly labelled illustrative plots to the report.
 
-2026년 10월 5일
+This script enumerates proposed trials and creates synthetic visual examples.
+It does not train forecasting models or produce measured performance results.
+"""
+from __future__ import annotations
 
-## 1. 모델 후보 3개
+import csv
+import itertools
+import json
+import re
+import shutil
+from pathlib import Path
 
-세 모델을 **동일한 예측 구간, 입력 정보, 시간순 검증 구간**에서 모두 학습·비교한 뒤 최종 모델을 선정한다. 아래 논문 수치는 각 연구의 자료와 실험 조건에서 나온 결과이므로 모델 간 순위를 미리 정하는 데 사용하지 않는다.
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import numpy as np
+from docx import Document
+from docx.shared import Inches, Pt, RGBColor
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 
-| 모델 | 전력사용량 예측 논문에서의 사용 이력 | 논문 평가 지표 | 후보 선정 근거 |
-|---|---|---|---|
-| **XGBoost** | 철강공장 시간별 전력사용량 예측 연구에서 과거 24시간의 전력값을 입력해 시험했다. 연구가 보고한 XGBoost 결과는 RMSE 54.833 kWh, MAE 30.302 kWh, MAPE 74.57%다. [1] | RMSE, MAE, MAPE [1] | 생산·기상·달력·과거 전력처럼 형태가 다른 입력을 한 모델에 결합하고, 비선형 조건을 학습할 수 있다. |
-| **LightGBM** | 여섯 지역의 시간별 전력부하를 대상으로 XGBoost와 순환신경망 등을 함께 비교한 연구가 있다. 스페인 1년 자료에서 LightGBM의 보고값은 nRMSE 2.31%, MAE 397.8, R² 0.98이다. [2] | nRMSE, MAE, R² [2] | XGBoost와 동일한 입력 조건에서 부스팅 방식의 차이를 비교할 수 있다. |
-| **LSTM** | 같은 철강공장 연구에서 순차적인 과거 전력값을 입력해 시험했다. 연구가 보고한 LSTM 결과는 RMSE 49.826 kWh, MAE 28.139 kWh, MAPE 66.80%다. [1] | RMSE, MAE, MAPE [1] | 생산 및 전력 변화의 시간적 순서를 직접 학습하는 방식이 트리 모델보다 유리한지 검증할 수 있다. |
+ROOT = Path(__file__).resolve().parents[1]
+ASSETS = ROOT / 'report_assets'
+ASSETS.mkdir(exist_ok=True)
+MARKER = '## 5. 하이퍼파라미터 탐색 및 층별 미세조정 실험 설계'
+TITLE = '05_전력사용량_모델후보_평가지표_선정'
+NOTE = '가상 데이터 · 실제 학습 결과 또는 성능 예측값이 아님'
+plt.rcParams.update({
+    'font.family': 'Malgun Gothic', 'axes.unicode_minus': False,
+    'font.size': 10, 'axes.spines.top': False, 'axes.spines.right': False,
+    'axes.titleweight': 'bold', 'figure.facecolor': 'white',
+    'savefig.facecolor': 'white', 'svg.fonttype': 'path',
+})
+COLORS = ['#2563eb', '#0f9d8a', '#d88624', '#8b5cf6', '#db647c', '#475569']
 
-## 2. 사전학습 모델 3개와 전력사용량 예측 적용 이력
+GRIDS = {
+    'XGBoost': {'max_depth': [3, 5, 7], 'learning_rate': [.01, .05, .1],
+                'n_estimators': [200, 500, 1000], 'min_child_weight': [1, 5],
+                'colsample_bytree': [.8, 1.]},
+    'LightGBM': {'num_leaves': [7, 15, 31], 'learning_rate': [.01, .05, .1],
+                 'n_estimators': [200, 500, 1000], 'min_child_samples': [20, 50],
+                 'colsample_bytree': [.8, 1.]},
+    'LSTM': {'hidden_size': [32, 64, 128], 'num_layers': [1, 2],
+             'learning_rate': [.0001, .0003, .001], 'head_dropout': [0., .2]},
+}
+SCOPES = {
+    'Chronos-2': {'total_blocks': 12, 'last_k': [1, 2, 3, 6, 9, 12],
+                 'blocks': 'encoder.block',
+                 'head': ['output_patch_embedding', 'encoder.final_layer_norm'],
+                 'status': 'official full tuning; selective freezing needs a custom training path'},
+    'TimesFM 3.0': {'total_blocks': 20, 'last_k': [1, 2, 5, 10, 15, 20],
+                   'blocks': 'transformer_stack.layers', 'head': ['output_head'],
+                   'status': 'inference-only public implementation; custom training and gradient validation required'},
+    'Moirai 2.0': {'total_blocks': 6, 'last_k': [1, 2, 3, 4, 5, 6],
+                  'blocks': 'encoder.layers', 'head': ['out_proj', 'encoder.norm'],
+                  'status': 'training_mode forward exists; Moirai2-specific training adapter required'},
+}
 
-아래 세 모델도 동일한 평가 조건에서 비교할 수 있다. **전력 가격 예측이나 발전량 예측을 전력사용량 예측 이력으로 세지 않았다.** 적용 이력의 대상이 제조공장인지, 건물·고객·전력망인지 구분했다.
 
-| 모델 | 2026년 기준 모델 특성 | 실제 전력사용량 예측 적용 이력 | 선정 근거 |
-|---|---|---|---|
-| **TimesFM 3.0** (2026년 8월 발표) | Google Research의 다변량 사전학습 모델. 과거 변수와 미래에 알려진 변수를 입력하고 점·분위수 예측을 생성한다. [4] | **있음 — 고객 전력소비 벤치마크.** 공식 TimesFM 3.0 GIFT-Eval 결과에 `electricity/W/short`, `electricity/D/short` 실험이 기록돼 있다. GIFT-Eval 논문이 정의한 Electricity 자료의 원천은 실제 고객 전력소비 기록이다. 제조공장 개별 자료의 검증은 아니다. [5, 6] | 생산계획 등 미래에 알려진 변수의 효과를 비교할 수 있다. 공개 가중치는 비상업·비운영 용도로 제한된다. [4, 7] |
-| **Chronos-2** (2025년 10월 발표) | 단변량·다변량·공변량 포함 예측을 지원한다. [8] | **있음 — 실제 전력망 부하.** 2026년 연구가 ISO New England와 ENTSO-E 전력부하에 Chronos-2를 적용해 제로샷·미세조정 예측을 비교했다. 제로샷 성능은 해당 연구의 전용 학습 모델보다 낮았고, 미세조정 후 단기 예측은 개선됐다. [9] | 생산·기상·달력 변수의 활용과 사전학습 모델의 적응 효과를 함께 비교할 수 있다. |
-| **Moirai 2.0** (가중치 2025년 8월 공개) | 분위수 예측을 제공한다. 원 논문은 변수를 독립된 단변량 시계열로 처리한다고 명시한다. [10, 11] | **있음 — 실제 전력망 부하.** 2026년 제로샷 비교 연구가 2020~2024년 ERCOT 시간별 전력부하에 Moirai-2를 적용했다. 512시간 입력·24시간 예측 조건에서 MASE 약 0.33을 보고했다. [12] | 전력 이력만 사용하는 사전학습 예측의 비교 기준이 된다. 생산·기상 변수의 공동 효과를 직접 모델링하는 후보는 아니다. |
+def write_csv(name, rows):
+    rows = list(rows)
+    with (ASSETS / name).open('w', encoding='utf-8-sig', newline='') as f:
+        w = csv.DictWriter(f, fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
 
-TimesFM 3.0의 적용 근거는 **공식 공개 실험 결과와 GIFT-Eval 논문**이다. Chronos-2와 Moirai 2.0의 적용 근거는 **실제 부하 자료를 사용한 별도 연구 논문**이다. 세 적용 대상 모두 제조공장 전력사용량과 완전히 같지는 않으므로 최종 선정은 이 과제의 동일 조건 비교 결과로 결정한다.
 
-### 사전학습 모델 라이선스
+def enumerate_plan():
+    trials = []
+    for model, grid in GRIDS.items():
+        for i, values in enumerate(itertools.product(*grid.values()), 1):
+            trials.append({'model': model, 'trial_id': f'{model}-{i:03}',
+                           'parameters': json.dumps(dict(zip(grid, values))), 'status': 'planned'})
+    write_csv('planned_grid_trials.csv', trials)
+    layers = []
+    for model, cfg in SCOPES.items():
+        settings = [('ZS', None), ('F0', 0)] + [(f'F{i}', k) for i, k in enumerate(cfg['last_k'], 1)] + [('F7', 'all')]
+        for setting, k in settings:
+            layers.append({'model': model, 'setting': setting, 'last_k_blocks': k,
+                           'total_blocks': cfg['total_blocks'], 'implementation_status': cfg['status'],
+                           'status': 'planned'})
+    write_csv('planned_layer_trials.csv', layers)
+    plan = {'status': 'proposal_not_trained', 'checked_on': '2026-10-05',
+            'grid': GRIDS, 'grid_counts': {m: int(np.prod([len(x) for x in g.values()])) for m, g in GRIDS.items()},
+            'layer_scopes': SCOPES, 'fine_tune_learning_rates': [1e-6, 1e-5, 1e-4],
+            'protocol': {'proposed_context_hours': 168, 'proposed_horizon_hours': 24,
+                         'proposed_test_fraction': .2, 'expanding_validation_folds': 3,
+                         'confirmation_seeds': [17, 42, 73], 'peak_train_quantile': .95,
+                         'point_prediction': 'median for quantile models',
+                         'selection': 'validation RMSE within 2% of best, then peak MAE, then MAE and time'},
+            'figures': {'data_type': 'synthetic', 'purpose': 'preview of evaluation outputs, not expected model rankings'}}
+    (ASSETS / 'experiment_plan.json').write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding='utf-8')
 
-| 모델 | 공개 가중치 라이선스 | 코드 라이선스 및 사용 범위 |
-|---|---|---|
-| **TimesFM 3.0** | **TimesFM Non-Commercial License v1.0** [7] | 저장소 코드는 **Apache-2.0** [13]. 3.0 가중치는 비상업·비운영 사용으로 제한되며, 상업·운영 목적은 별도 허가가 필요하다. [7] |
-| **Chronos-2** | **Apache-2.0** [14] | `chronos-forecasting` 코드도 **Apache-2.0** [15]. 라이선스 조건을 지키면 상업적 이용이 가능하다. |
-| **Moirai 2.0-R-small** | **CC BY-NC 4.0** [16] | `uni2ts` 코드는 **Apache-2.0** [17]. 공개 가중치의 상업적 이용은 허용되지 않는다. [16] |
 
-## 3. 평가 지표 선정
+def finish(fig, stem):
+    fig.text(.5, .012, NOTE, ha='center', va='bottom', color='#b45309', fontsize=10, fontweight='bold')
+    fig.savefig(ASSETS / (stem + '.png'), dpi=180)
+    fig.savefig(ASSETS / (stem + '.svg'))
+    plt.close(fig)
 
-| 목적 | 지표 | 선택 근거 |
-|---|---|---|
-| 전체 구간의 평균 오차 | **MAE** = 절대오차의 평균 | 철강공장 [1], 지역 전력부하 [2], 조선소 최대수요전력 [3] 연구가 공통으로 사용한다. 원래 전력 단위의 평균 오차를 비교할 수 있다. |
-| 큰 예측오차 | **RMSE** = 평균 제곱오차의 제곱근 | 철강공장 [1]과 조선소 피크 [3] 연구가 사용한다. 큰 오차에 더 큰 가중치를 준다. |
-| 높은 전력사용량 구간 | **피크 구간 MAE** | 전체 MAE가 낮아도 높은 부하 구간의 오차는 클 수 있으므로 분리해 보고한다. 조선소 연구는 전체 오차와 상위 위험일 탐지를 함께 평가했다. [3] |
 
-**비교 시 고정할 사항:** 예측 시작 시점과 예측 길이, 시간순 훈련·검증·시험 구간을 여섯 모델에 동일하게 적용한다. 여섯 모델 모두 전력 이력만 쓰는 공통 실험을 수행하고, 외생 변수를 받는 모델은 생산·기상·달력 변수를 추가한 확장 실험도 수행한다. 피크 구간의 기준값은 시험 구간을 보기 전에 훈련 구간에서 정한다. 전체 MAE·RMSE와 피크 구간 MAE를 함께 확인해 최종 모델을 선정한다. MAPE는 [1]에서, nRMSE·R²는 [2]에서 사용한 지표로 기록하되 공통 비교 지표로는 MAE와 RMSE를 사용한다.
+def make_figures():
+    # Every numeric series below is hand-constructed or simulated for illustration.
+    matrices = [np.array([[18.8, 16.1, 17.4], [17.2, 14.5, 15.9], [17.6, 15.2, 17.8]]),
+                np.array([[19., 16.4, 17.], [17.6, 14.8, 15.5], [17.4, 15.3, 17.2]]),
+                np.array([[20.1, 18.2, 18.9], [18.7, 16.2, 16.8], [18.4, 16.7, 18.5]])]
+    fig, axes = plt.subplots(1, 3, figsize=(13.8, 5.2))
+    rows = []
+    for ax, model, mat, ys, xs, ylabel in zip(axes, GRIDS, matrices,
+            [[3, 5, 7], [7, 15, 31], [32, 64, 128]],
+            [['.01', '.05', '.10'], ['.01', '.05', '.10'], ['.0001', '.0003', '.001']],
+            ['max_depth', 'num_leaves', 'hidden_size']):
+        im = ax.imshow(mat, cmap='YlGnBu', vmin=14, vmax=21, aspect='auto')
+        ax.set(xticks=range(3), xticklabels=xs, yticks=range(3), yticklabels=ys,
+               xlabel='learning_rate', ylabel=ylabel, title=model)
+        for i, j in itertools.product(range(3), repeat=2):
+            ax.text(j, i, f'{mat[i,j]:.1f}', ha='center', va='center', color='white' if mat[i,j] > 18 else '#172554')
+            rows.append({'data_type': 'synthetic', 'model': model, ylabel: ys[i],
+                         'learning_rate': xs[j], 'validation_RMSE_example': mat[i,j]})
+        i, j = np.unravel_index(mat.argmin(), mat.shape)
+        ax.add_patch(plt.Rectangle((j-.48, i-.48), .96, .96, fill=False, ec='#ef4444', lw=2.5))
+    fig.suptitle('그림 1. Grid Search 결과표 예시 — 검증 RMSE가 낮은 조합 찾기', y=.98, fontsize=15, fontweight='bold')
+    fig.text(.5, .09, '고정: 트리 500개 / colsample_bytree=1.0 / XGB min_child_weight=1 / LGB min_child_samples=20\nLSTM: 1층 / 출력부 dropout=0.0 · 나머지는 본문 고정 설정', ha='center', color='#475569', fontsize=9)
+    fig.subplots_adjust(left=.06, right=.89, top=.81, bottom=.23, wspace=.42)
+    cax = fig.add_axes([.92, .23, .016, .58])
+    fig.colorbar(im, cax=cax, label='검증 RMSE (가상 전력 단위)')
+    finish(fig, '01_grid_search_example')
+    # Avoid variable CSV columns by expressing both grid coordinates generically.
+    write_csv('illustrative_grid.csv', [{'data_type': r['data_type'], 'model': r['model'],
+        'structure_parameter': next(k for k in r if k in ['max_depth','num_leaves','hidden_size']),
+        'structure_value': next(v for k,v in r.items() if k in ['max_depth','num_leaves','hidden_size']),
+        'learning_rate': r['learning_rate'], 'validation_RMSE_example': r['validation_RMSE_example']} for r in rows])
 
-## 4. 참고 문헌 및 공식 실험 자료
+    layer_vals = {
+        'Chronos-2': [18.5, 17.1, 16.2, 15.5, 15.0, 14.6, 14.8, 15.3, 16.0],
+        'TimesFM 3.0': [17.8, 17.1, 16.8, 16.4, 16.0, 15.7, 15.4, 15.2, 15.0],
+        'Moirai 2.0': [19.4, 18.3, 17.6, 17.2, 17.1, 17.0, 17.1, 17.0, 17.2],
+    }
+    fig, axes = plt.subplots(1, 3, figsize=(13.8, 5.5))
+    rows = []
+    for ax, (model, vals), color in zip(axes, layer_vals.items(), COLORS):
+        v = np.array(vals)
+        error = np.array([0, .5, .4, .35, .3, .35, .4, .55, .65])
+        train = np.r_[np.nan, np.linspace(14.8, 8.5, 8)]
+        ax.axhline(v[0], c='#94a3b8', ls='--', lw=1, label='Zero-shot 검증 RMSE')
+        ax.errorbar(range(9), v, yerr=error, color=color, marker='o', capsize=3, label='검증 RMSE')
+        ax.plot(range(9), train, color='#64748b', ls=':', label='훈련 RMSE')
+        ax.set(xticks=range(9), xticklabels=['ZS']+[f'F{i}' for i in range(8)], ylim=(7.5, 21),
+               ylabel='RMSE (가상 전력 단위)', xlabel='학습 범위 (본문의 모델별 설정표)',
+               title=model + (' *' if model != 'Chronos-2' else ''))
+        ax.grid(axis='y', alpha=.2)
+        ax.legend(fontsize=8, loc='lower left')
+        for i in range(9):
+            rows.append({'data_type':'synthetic', 'model': model, 'scope': 'ZS' if i==0 else f'F{i-1}',
+                         'validation_RMSE':v[i], 'illustrative_sd': error[i],
+                         'train_RMSE': '' if i==0 else train[i]})
+    fig.suptitle('그림 2. 층별 Fine-tuning 추세 예시 — 과적합 / 지속 개선 / 정체', y=.98, fontsize=15, fontweight='bold')
+    fig.text(.5, .09, '학습률 1e-5 고정 예시 · * 추가 학습 구현이 필요한 조건부 실험\n오차막대: 가상 반복 실험 표준편차', ha='center', color='#475569', fontsize=9)
+    fig.subplots_adjust(left=.06, right=.98, top=.80, bottom=.23, wspace=.32)
+    finish(fig, '02_layer_trends_example')
+    write_csv('illustrative_layer_trends.csv', rows)
 
-[1] “Comparative evaluation of several models for forecasting hourly electricity use in a steel plant,” *Scientific Reports*, 2026. https://doi.org/10.1038/s41598-026-43868-z
+    names = ['XGBoost', 'LightGBM', 'LSTM', 'TimesFM 3.0 / ZS', 'TimesFM 3.0 / FT*',
+             'Chronos-2 / ZS', 'Chronos-2 / FT', 'Moirai 2.0 / ZS', 'Moirai 2.0 / FT*']
+    vals = np.array([[10.4,14.5,22.0],[10.2,14.8,19.0],[11.2,16.2,17.8],
+                     [12.3,17.8,23.8],[10.7,15.0,20.8],[12.7,18.5,25.5],
+                     [10.0,14.6,18.3],[13.5,19.4,26.3],[11.7,17.0,21.9]])
+    times = np.array([2.4,1.4,13,0,20,0,9,0,4.5])
+    fig, axes = plt.subplots(1, 3, figsize=(13.8, 6.4), sharey=True)
+    for ax, i, color, title in zip(axes, range(3), COLORS, ['전체 MAE','전체 RMSE','피크 구간 MAE']):
+        ax.barh(range(9), vals[:,i], color=[color if '/ ZS' not in n else '#cbd5e1' for n in names], height=.64)
+        ax.set(yticks=range(9), yticklabels=names, xlabel='오차 (가상 전력 단위)', title=title, xlim=(0,29))
+        for j, v in enumerate(vals[:,i]): ax.text(v+.4, j, f'{v:.1f}', va='center', fontsize=9)
+        ax.grid(axis='x', alpha=.18)
+    axes[0].invert_yaxis()
+    fig.suptitle('그림 3. 후보별 성능 비교 예시 — 전체 오차와 피크 오차 함께 보기', y=.97, fontsize=15, fontweight='bold')
+    fig.text(.5,.09,'각 FT는 검증 구간에서 선택한 설정 · * 구현 검증 후에만 결과표에 포함 · 후보 순위는 예시',ha='center',color='#475569')
+    fig.subplots_adjust(left=.19, right=.96, top=.83, bottom=.20, wspace=.20)
+    finish(fig, '03_model_comparison_example')
+    write_csv('illustrative_model_comparison.csv', [{'data_type':'synthetic', 'model_variant':n,
+        'MAE':v[0], 'RMSE':v[1], 'peak_MAE':v[2], 'fit_minutes_example': t}
+        for n,v,t in zip(names, vals, times)])
 
-[2] “Forecasting load consumption: a comprehensive evaluation of deep learning and machine learning techniques,” *Electric Power Systems Research*, 2025. https://doi.org/10.1016/j.epsr.2025.111834
+    t = np.arange(72)
+    target = 80 + 17*np.sin(2*np.pi*(t-6)/24) + 7*np.sin(2*np.pi*t/8)
+    target += 57*np.exp(-((t-39)/2.2)**2) + 38*np.exp(-((t-62)/2.)**2)
+    pa = target - 28*np.exp(-((t-39)/2.8)**2) - 20*np.exp(-((t-62)/2.8)**2) + 2*np.sin(t)
+    pb = target - 6*np.exp(-((t-39)/2.8)**2) - 5*np.exp(-((t-62)/2.8)**2) + 6*np.sin(t/3)
+    fig, axes = plt.subplots(2,1,figsize=(13.8,6.8),sharex=True,gridspec_kw={'height_ratios':[2,1]})
+    axes[0].plot(t,target,c='#172554',lw=2,label='관측값 역할의 합성 시계열')
+    axes[0].plot(t,pa,c=COLORS[0],lw=1.5,label='가상 후보 A')
+    axes[0].plot(t,pb,c=COLORS[1],lw=1.5,label='가상 후보 B')
+    axes[0].axhline(120,c='#b45309',ls='--',label='훈련 구간에서 정하는 피크 기준 (예시)')
+    axes[0].fill_between(t,0,180,where=target>=120,color='#fbbf24',alpha=.17)
+    axes[0].set(ylim=(45,170),ylabel='전력사용량 (가상 단위)')
+    axes[0].legend(ncol=2,fontsize=9,loc='upper left')
+    axes[1].plot(t,pa-target,c=COLORS[0],label='후보 A 오차')
+    axes[1].plot(t,pb-target,c=COLORS[1],label='후보 B 오차')
+    axes[1].axhline(0,c='#64748b',lw=.8)
+    axes[1].set(ylabel='예측 - 관측',xlabel='동일 평가 구간의 경과 시간 (시간)')
+    for ax in axes: ax.grid(alpha=.18)
+    fig.suptitle('그림 4. 피크 예측 확대 예시 — 최고점 누락과 과소예측 확인',y=.98,fontsize=15,fontweight='bold')
+    fig.subplots_adjust(left=.08,right=.97,top=.86,bottom=.13,hspace=.15)
+    finish(fig,'04_peak_trace_example')
+    write_csv('illustrative_peak_trace.csv',[{'data_type':'synthetic','hour':i,'synthetic_target':y,
+        'candidate_A':a,'candidate_B':b} for i,y,a,b in zip(t,target,pa,pb)])
 
-[3] K. Lee, J. Ahn, J. Lee, “Day-ahead industrial peak demand forecasting: A shipyard benchmark of deep learning forecasters and stacking ensembles,” *International Journal of Electrical Power & Energy Systems*, 2026. https://doi.org/10.1016/j.ijepes.2026.111933
+    fig, ax = plt.subplots(figsize=(11.8,6.5))
+    for i,(n,v,tm) in enumerate(zip(names,vals,times)):
+        ax.scatter(tm,v[1],s=65,color=COLORS[i%len(COLORS)],marker='s' if '/ ZS' in n else 'o')
+        ax.annotate(n,(tm,v[1]),xytext=(8,6),textcoords='offset points',fontsize=9)
+    ax.set(xlim=(-1,27),ylim=(13.5,21),xlabel='선택된 설정 1회의 추가 학습 시간 (분, 가상 값)',
+           ylabel='검증 RMSE (가상 전력 단위)')
+    ax.grid(alpha=.2)
+    fig.suptitle('그림 5. 정확도와 학습 비용 비교 예시',y=.97,fontsize=15,fontweight='bold')
+    fig.text(.5,.09,'Zero-shot의 추가 학습 시간은 0 · 모델 로딩 / 추론 / 전체 탐색 시간은 별도 기록',ha='center',color='#475569')
+    fig.subplots_adjust(left=.10,right=.96,top=.85,bottom=.20)
+    finish(fig,'05_cost_accuracy_example')
 
-[4] Google Research, “TimesFM-3: A zero-shot foundation model for multivariate forecasting,” 2026-08-31. https://research.google/blog/timesfm-3-a-zero-shot-foundation-model-for-multivariate-forecasting/
 
-[5] Google Research, TimesFM 3.0 GIFT-Eval 공식 결과표. https://raw.githubusercontent.com/google-research/timesfm/master/timesfm3-usage/benchmarks/gift_eval/all_results.csv
-
-[6] T. Aksu et al., “GIFT-Eval: A Benchmark For General Time Series Forecasting Model Evaluation,” arXiv:2410.10393, 2024. https://arxiv.org/abs/2410.10393
-
-[7] Google Research, TimesFM 3.0 공개 가중치 라이선스. https://huggingface.co/google/timesfm-3.0-pytorch/blob/main/LICENSE
-
-[8] A. F. Ansari et al., “Chronos-2: From Univariate to Universal Forecasting,” arXiv:2510.15821, 2025. https://arxiv.org/abs/2510.15821
-
-[9] V. Pendyala et al., “Assessing Covariate-Informed Grid Load Forecasting with a Time-Series Foundation Model,” arXiv:2609.06656, 2026. https://arxiv.org/abs/2609.06656
-
-[10] C. Liu et al., “Moirai 2.0: When Less Is More for Time Series Forecasting,” arXiv:2511.11698, 2025. https://arxiv.org/abs/2511.11698
-
-[11] Salesforce AI Research, Uni2TS 공식 저장소. https://github.com/SalesforceAIResearch/uni2ts
-
-[12] L. Simeone, “Time Series Foundation Models for Energy Load Forecasting on Consumer Hardware: A Multi-Dimensional Zero-Shot Benchmark,” arXiv:2602.10848, 2026. https://arxiv.org/abs/2602.10848
-
-[13] Google Research, TimesFM 코드 라이선스. https://github.com/google-research/timesfm/blob/master/LICENSE
-
-[14] Amazon, Chronos-2 공식 모델 카드. https://huggingface.co/amazon/chronos-2
-
-[15] Amazon Science, Chronos 코드 라이선스. https://github.com/amazon-science/chronos-forecasting/blob/main/LICENSE
-
-[16] Salesforce AI Research, Moirai 2.0-R-small 공식 모델 카드. https://huggingface.co/Salesforce/moirai-2.0-R-small
-
-[17] Salesforce AI Research, Uni2TS 코드 라이선스. https://github.com/SalesforceAIResearch/uni2ts/blob/main/LICENSE.txt
-
+APPENDIX = r'''
 ## 5. 하이퍼파라미터 탐색 및 층별 미세조정 실험 설계
 
 ### 5.1 비교 조건과 선정 절차
@@ -245,3 +388,98 @@ F0–F6에서는 입력 임베딩·입력 투영부를 고정한다. F6과 F7은
 [31] Salesforce AI Research, TransformerEncoder. https://github.com/SalesforceAIResearch/uni2ts/blob/main/src/uni2ts/module/transformer.py
 
 [32] Salesforce AI Research, Uni2TS fine-tuning example. https://github.com/SalesforceAIResearch/uni2ts/blob/main/README.md#fine-tuning
+'''
+
+
+def plain(text):
+    return text.replace('**', '').replace('`', '')
+
+
+def add_md(doc, text):
+    lines = text.strip().splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if not line:
+            i += 1
+            continue
+        if line.startswith('|'):
+            data = []
+            while i < len(lines) and lines[i].strip().startswith('|'):
+                row = [plain(x.strip()) for x in lines[i].strip().strip('|').split('|')]
+                if not all(re.fullmatch(r':?-+:?', x.replace(' ', '')) for x in row): data.append(row)
+                i += 1
+            table = doc.add_table(rows=1, cols=len(data[0]))
+            table.style = 'Table Grid'
+            for j,x in enumerate(data[0]): table.rows[0].cells[j].text = x
+            for row in data[1:]:
+                cells = table.add_row().cells
+                for j,x in enumerate(row): cells[j].text = x
+            # Keep rows intact, repeat the header, and use consistent compact fonts.
+            for n,row in enumerate(table.rows):
+                tr_pr = row._tr.get_or_add_trPr()
+                cant = OxmlElement('w:cantSplit'); tr_pr.append(cant)
+                if n == 0:
+                    repeat = OxmlElement('w:tblHeader'); tr_pr.append(repeat)
+                for cell in row.cells:
+                    if n == 0:
+                        shade = OxmlElement('w:shd'); shade.set(qn('w:fill'), 'E8EFF7')
+                        cell._tc.get_or_add_tcPr().append(shade)
+                    for p in cell.paragraphs:
+                        p.paragraph_format.space_after = Pt(3)
+                        p.paragraph_format.keep_with_next = n == 0
+                        for run in p.runs:
+                            run.font.size = Pt(8)
+                            run.bold = n == 0
+            doc.add_paragraph()
+            continue
+        if line.startswith('!['):
+            match = re.match(r'!\[(.*?)\]\((.*?)\)',line)
+            p = doc.add_paragraph()
+            p.paragraph_format.keep_with_next = True
+            p.add_run().add_picture(str(ROOT / match[2]), width=Inches(6.9))
+            cap = doc.add_paragraph(match[1] + ' — ' + NOTE)
+            cap.paragraph_format.space_after = Pt(6)
+            for run in cap.runs:
+                run.font.size = Pt(8)
+                run.font.color.rgb = RGBColor.from_string('A05A13')
+        elif line.startswith('### '):
+            p = doc.add_heading(line[4:], level=2)
+            if re.match(r'6\.[2-5] ', line[4:]): p.paragraph_format.page_break_before = True
+        elif line.startswith('## '):
+            p = doc.add_heading(line[3:],level=1)
+            p.paragraph_format.page_break_before = True
+        else:
+            p = doc.add_paragraph(plain(line))
+            p.paragraph_format.space_after = Pt(6)
+        i += 1
+
+
+def update_documents():
+    readme = ROOT / 'README.md'
+    original_md = readme.read_text(encoding='utf-8').split(MARKER)[0].rstrip()
+    new_md = original_md + '\n\n' + APPENDIX.strip() + '\n'
+    readme.write_text(new_md, encoding='utf-8')
+    path = ROOT / f'{TITLE}.docx'
+    doc = Document(path)
+    # Idempotent append: preserve all existing report content preceding section 5.
+    remove = False
+    for element in list(doc._element.body):
+        if element.tag == qn('w:sectPr'): continue
+        if element.tag == qn('w:p'):
+            content = ''.join(element.itertext())
+            if '5. 하이퍼파라미터 탐색 및 층별 미세조정 실험 설계' in content: remove = True
+        if remove: doc._element.body.remove(element)
+    add_md(doc, APPENDIX)
+    doc.save(path)
+    docs = ROOT / 'docs'
+    if docs.exists():
+        (docs / f'{TITLE}.md').write_text(new_md.replace('](report_assets/', '](../report_assets/'),encoding='utf-8')
+        shutil.copy2(path, docs / path.name)
+
+
+if __name__ == '__main__':
+    enumerate_plan()
+    make_figures()
+    update_documents()
+    print('Updated README and DOCX; created 5 synthetic figures and planned-trial files. No model training performed.')

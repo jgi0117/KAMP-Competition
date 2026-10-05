@@ -1,0 +1,28 @@
+﻿model,setting,last_k_blocks,total_blocks,implementation_status,status
+Chronos-2,ZS,,12,official full tuning; selective freezing needs a custom training path,planned
+Chronos-2,F0,0,12,official full tuning; selective freezing needs a custom training path,planned
+Chronos-2,F1,1,12,official full tuning; selective freezing needs a custom training path,planned
+Chronos-2,F2,2,12,official full tuning; selective freezing needs a custom training path,planned
+Chronos-2,F3,3,12,official full tuning; selective freezing needs a custom training path,planned
+Chronos-2,F4,6,12,official full tuning; selective freezing needs a custom training path,planned
+Chronos-2,F5,9,12,official full tuning; selective freezing needs a custom training path,planned
+Chronos-2,F6,12,12,official full tuning; selective freezing needs a custom training path,planned
+Chronos-2,F7,all,12,official full tuning; selective freezing needs a custom training path,planned
+TimesFM 3.0,ZS,,20,inference-only public implementation; custom training and gradient validation required,planned
+TimesFM 3.0,F0,0,20,inference-only public implementation; custom training and gradient validation required,planned
+TimesFM 3.0,F1,1,20,inference-only public implementation; custom training and gradient validation required,planned
+TimesFM 3.0,F2,2,20,inference-only public implementation; custom training and gradient validation required,planned
+TimesFM 3.0,F3,5,20,inference-only public implementation; custom training and gradient validation required,planned
+TimesFM 3.0,F4,10,20,inference-only public implementation; custom training and gradient validation required,planned
+TimesFM 3.0,F5,15,20,inference-only public implementation; custom training and gradient validation required,planned
+TimesFM 3.0,F6,20,20,inference-only public implementation; custom training and gradient validation required,planned
+TimesFM 3.0,F7,all,20,inference-only public implementation; custom training and gradient validation required,planned
+Moirai 2.0,ZS,,6,training_mode forward exists; Moirai2-specific training adapter required,planned
+Moirai 2.0,F0,0,6,training_mode forward exists; Moirai2-specific training adapter required,planned
+Moirai 2.0,F1,1,6,training_mode forward exists; Moirai2-specific training adapter required,planned
+Moirai 2.0,F2,2,6,training_mode forward exists; Moirai2-specific training adapter required,planned
+Moirai 2.0,F3,3,6,training_mode forward exists; Moirai2-specific training adapter required,planned
+Moirai 2.0,F4,4,6,training_mode forward exists; Moirai2-specific training adapter required,planned
+Moirai 2.0,F5,5,6,training_mode forward exists; Moirai2-specific training adapter required,planned
+Moirai 2.0,F6,6,6,training_mode forward exists; Moirai2-specific training adapter required,planned
+Moirai 2.0,F7,all,6,training_mode forward exists; Moirai2-specific training adapter required,planned
