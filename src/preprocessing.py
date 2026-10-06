@@ -130,6 +130,29 @@ def add_derived_features(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def load_cleaned_data(
+    data_path: Optional[Path] = None,
+    auto_generate: bool = True,
+) -> pd.DataFrame:
+    """정제 완료 데이터를 불러오고, 없으면 기존 전처리 파이프라인을 실행합니다."""
+    if data_path is None:
+        root_dir = Path(__file__).resolve().parent.parent
+        data_path = root_dir / "data" / "okm_cleaned_2021.csv"
+
+    data_path = Path(data_path)
+    if data_path.exists():
+        return pd.read_csv(data_path, encoding="utf-8-sig", parse_dates=["날짜"])
+
+    alias_path = data_path.parent / "okm_preprocessed_2021.csv"
+    if alias_path.exists():
+        return pd.read_csv(alias_path, encoding="utf-8-sig", parse_dates=["날짜"])
+
+    if auto_generate:
+        return run_preprocessing_pipeline()
+
+    raise FileNotFoundError(f"정제 데이터 파일을 찾을 수 없습니다: {data_path}")
+
+
 def run_preprocessing_pipeline(
     data_path: Optional[Path] = None,
     save_summary: bool = True

@@ -18,6 +18,9 @@ if ENV_PATH.exists():
 else:
     load_dotenv()  # 시스템 환경 변수 또는 상위 디렉터리 탐색
 
+# feature engineering 입출력에 사용하는 프로젝트 로컬 데이터 디렉터리
+LOCAL_DATA_DIR = ROOT_DIR / "data"
+
 # 원본 데이터 디렉터리 경로 (.env의 DATA_DIR 우선)
 _env_data_dir = os.getenv("DATA_DIR")
 if _env_data_dir:
