@@ -135,7 +135,7 @@ def run_chronos2(
 
     for scope in settings.scopes:
         for learning_rate in settings.learning_rates:
-            for fold_number, (train_index, val_index) in enumerate(folds, start=1):
+            for fold_number, fold in enumerate(folds, start=1):
                 seed_everything(settings.search_seed)
                 pipeline = load_pipeline()
                 tracker = callback_type()
@@ -146,9 +146,9 @@ def run_chronos2(
                 started = time.perf_counter()
                 with _finetune_scope(scope) as counts:
                     pipeline = pipeline.fit(
-                        inputs=_series(history[train_index], targets[train_index]),
+                        inputs=_series(history[fold.train], targets[fold.train]),
                         validation_inputs=_series(
-                            history[val_index], targets[val_index]
+                            history[fold.early_stop], targets[fold.early_stop]
                         ),
                         prediction_length=data.horizon,
                         context_length=data.context_length,
@@ -174,18 +174,21 @@ def run_chronos2(
                     )
                 train_seconds = time.perf_counter() - started
                 prediction, inference_seconds = _predict(
-                    pipeline, history[val_index], data.horizon, batch_size
+                    pipeline, history[fold.evaluate], data.horizon, batch_size
                 )
                 records.append(
                     {
                         "scope": scope,
                         "learning_rate": learning_rate,
-                        "fold": fold_number,
+                        "fold": fold.name or fold_number,
+                        "n_train": len(fold.train),
+                        "n_early_stop": len(fold.early_stop),
+                        "n_eval": len(fold.evaluate),
                         "best_step": tracker.best_step or settings.max_steps,
                         "train_seconds": train_seconds,
                         "inference_seconds": inference_seconds,
                         **counts,
-                        **regression_metrics(targets[val_index], prediction),
+                        **regression_metrics(targets[fold.evaluate], prediction),
                     }
                 )
                 pd.DataFrame(records).to_csv(

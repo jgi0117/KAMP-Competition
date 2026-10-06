@@ -1,4 +1,7 @@
 [data]
+split_strategy = "lhs"
+exclude_shutdown_targets = true
+# split_strategy = "ratio"로 바꿀 때 사용하는 임시 비율
 train_ratio = 0.7
 val_ratio = 0.2
 test_ratio = 0.1
@@ -16,6 +19,7 @@ continue_on_error = true
 # full: DOCX의 전체 108개 조합, quick: 모델별 단일 조합
 search_profile = "full"
 n_jobs = 1
+device = "auto"
 
 [foundation]
 device = "auto"

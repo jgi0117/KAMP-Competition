@@ -7,7 +7,6 @@ from typing import Any, Callable
 
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import TimeSeriesSplit
 
 from .data import DatasetBundle, require_target_history
 from .finetuning import (
@@ -18,6 +17,7 @@ from .finetuning import (
     train_torch_point_model,
 )
 from .metrics import regression_metrics
+from .splitting import TemporalFold, get_temporal_folds
 
 
 @dataclass
@@ -60,11 +60,11 @@ def histories(
 
 def expanding_folds(
     data: DatasetBundle, n_splits: int
-) -> tuple[np.ndarray, np.ndarray, list[tuple[np.ndarray, np.ndarray]]]:
+) -> tuple[np.ndarray, np.ndarray, list[TemporalFold]]:
     train_history, val_history, _ = histories(data)
     history = np.concatenate([train_history, val_history], axis=0)
     targets = np.concatenate([data.train.y, data.val.y], axis=0)
-    folds = list(TimeSeriesSplit(n_splits=n_splits).split(history))
+    folds = get_temporal_folds(data, n_splits)
     return history, targets, folds
 
 
@@ -167,16 +167,16 @@ def run_torch_foundation_search(
     records: list[dict[str, Any]] = []
     for scope in settings.scopes:
         for learning_rate in settings.learning_rates:
-            for fold_number, (train_index, val_index) in enumerate(folds, start=1):
+            for fold_number, fold in enumerate(folds, start=1):
                 seed_everything(settings.search_seed)
                 model = loader()
                 counts = apply_finetune_scope(model_name, model, scope)
                 trained = train_torch_point_model(
                     model,
-                    history[train_index],
-                    targets[train_index],
-                    history[val_index],
-                    targets[val_index],
+                    history[fold.train],
+                    targets[fold.train],
+                    history[fold.early_stop],
+                    targets[fold.early_stop],
                     device=device,
                     learning_rate=learning_rate,
                     physical_batch_size=settings.train_batch_size,
@@ -189,7 +189,7 @@ def run_torch_foundation_search(
                 )
                 val_prediction, inference_seconds = predict_torch(
                     model,
-                    history[val_index],
+                    history[fold.evaluate],
                     device=device,
                     batch_size=inference_batch_size,
                     forward_fn=forward_fn,
@@ -198,12 +198,17 @@ def run_torch_foundation_search(
                     {
                         "scope": scope,
                         "learning_rate": learning_rate,
-                        "fold": fold_number,
+                        "fold": fold.name or fold_number,
+                        "n_train": len(fold.train),
+                        "n_early_stop": len(fold.early_stop),
+                        "n_eval": len(fold.evaluate),
                         "best_step": trained.best_step,
                         "train_seconds": trained.elapsed_seconds,
                         "inference_seconds": inference_seconds,
                         **counts,
-                        **regression_metrics(targets[val_index], val_prediction),
+                        **regression_metrics(
+                            targets[fold.evaluate], val_prediction
+                        ),
                     }
                 )
                 pd.DataFrame(records).to_csv(

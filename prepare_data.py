@@ -9,12 +9,12 @@ from kamp_models.preparation import prepare_csv_to_npz
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run the KJH preprocessing pipeline and create 7:2:1 model splits."
+        description="Run KJH preprocessing and create the shared LHS temporal splits."
     )
     parser.add_argument("--input", required=True, help="Raw or cleaned OKM CSV")
     parser.add_argument(
         "--output",
-        default="outputs/prepared/model_input_7_2_1.npz",
+        default="outputs/prepared/model_input_lhs.npz",
         help="Destination NPZ",
     )
     parser.add_argument(
@@ -23,6 +23,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--context-length", type=int, default=168)
     parser.add_argument("--horizon", type=int, default=1)
+    parser.add_argument(
+        "--split-strategy", choices=("lhs", "ratio"), default="lhs"
+    )
     return parser.parse_args()
 
 
@@ -36,6 +39,7 @@ def main() -> None:
         train_ratio=0.7,
         val_ratio=0.2,
         test_ratio=0.1,
+        split_strategy=args.split_strategy,
         cleaned_reference=(
             Path(args.cleaned_reference) if args.cleaned_reference else None
         ),

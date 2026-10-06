@@ -1,89 +1,88 @@
 # 모델 학습 및 비교 실행 안내
 
-이 코드는 과거 168시간의 전처리 완료 데이터로 다음 1시간의 평균 전력사용량을 예측합니다. 동일 데이터로 XGBoost, LightGBM, TimesFM 3.0, Chronos-2, Moirai 2.0을 한 번에 실행하고 RMSE, MAE, R²를 비교합니다. LSTM은 포함하지 않습니다.
+이 코드는 과거 168시간의 전처리 완료 데이터로 다음 1시간의 평균 전력 사용량(`전력_평균_실수`)을 예측합니다. 동일한 데이터와 분할 조건으로 XGBoost, LightGBM, TimesFM 3.0, Chronos-2, Moirai 2.0을 한 번에 실행하고 RMSE, MAE, R²를 비교합니다. LSTM과 TCN은 이 브랜치에 포함하지 않습니다.
 
-## 입력 데이터
+## 공통 데이터 조건
 
-입력은 전처리가 끝난 NumPy `npz` 파일 또는 `kjh` 전처리 대상 CSV입니다. CSV를 전달하면 `src/preprocessing.py`를 실행하고 168시간 윈도우를 만든 뒤 시간순 70%/20%/10%로 자동 분할합니다.
+- KJH 전처리 코드인 `src/preprocessing.py`를 사용합니다.
+- 입력 Feature는 `kamp_models/schema.py`의 고정된 20개 열과 순서를 모든 모델이 공유합니다.
+- 각 표본은 직전 168시간을 입력으로, 바로 다음 1시간의 `전력_평균_실수`를 정답으로 사용합니다.
+- seed는 모든 모델에서 42로 고정합니다.
+- 셧다운 시점은 입력 이력에는 남기고, 해당 시점을 정답으로 갖는 표본은 학습과 평가에서 제외합니다.
 
-| 키 | 필수 형태 | 설명 |
-|---|---|---|
-| `X_train`, `X_val`, `X_test` | `[표본, 특성]` 또는 `[표본, 168, 특성]` | 트리 모델 입력 |
-| `y_train`, `y_val`, `y_test` | `[표본, 1]` | 각 기준 시점 직후 1시간의 평균 전력사용량 |
-| `target_history_train`, `target_history_val`, `target_history_test` | `[표본, 168]` | 사전학습 모델의 전력사용량 이력 |
+`data/okm_augumented_2021.csv`에 KJH 전처리를 적용한 결과는 `data/okm_cleaned_2021.csv`와 바이트 단위까지 같습니다. 두 파일의 SHA-256은 모두 `ce8142c4d88d4b627f1893304a3c07de328f5b6cce5bda7fdefe20397096c698`입니다.
 
-`X_*`가 `[표본, 168]`이면 그 배열을 전력 이력으로 자동 사용합니다. `X_*`가 `[표본, 168, 특성]`이면 `model_config.toml`의 `target_feature_index` 열을 전력 이력으로 사용합니다. 이 두 형태가 아니면 `target_history_*`를 별도로 넣어야 합니다.
+## LHS 시간 분할
 
-직접 NPZ를 전달하는 경우 모든 배열은 시간순이어야 하며 결측값과 무한값이 없어야 합니다. CSV 입력에서는 통합 준비 코드가 윈도우와 분할을 생성합니다. 평가값은 원 단위의 `전력_평균_실수`에서 계산합니다.
+`src/data_pipeline.py`의 분할 상수를 kgj 모델도 직접 사용합니다. 따라서 lhs와 이 브랜치는 모델 구현만 다르고 데이터 조건은 같습니다.
 
-현재 임시 분할은 6,000개 예측 윈도우를 다음처럼 나눕니다.
+최종 학습과 평가는 다음과 같이 분리합니다.
 
-| 분할 | 표본 수 | 예측 대상 시간 |
-|---|---:|---|
-| train | 4,200 | 2021-01-08 00:00 ~ 2021-07-01 23:00 |
-| validation | 1,200 | 2021-07-02 00:00 ~ 2021-08-20 23:00 |
-| test | 600 | 2021-08-21 00:00 ~ 2021-09-14 23:00 |
+| 용도 | Target 기간 | 표본 수 |
+|---|---|---:|
+| train | 2021-01-08 00:00 ~ 2021-08-01 23:00 | 4,944 |
+| validation / early stopping | 2021-08-02 00:00 ~ 2021-08-15 23:00 | 336 |
+| test | 2021-08-16 00:00 ~ 2021-09-14 23:00 | 703 |
 
-각 표본은 직전 168시간의 20개 과거 특성을 `X`로 사용하고, 바로 다음 1시간의 `전력_평균_실수`를 `y`로 사용합니다. `전력_평균_실수`는 15분·30분·45분·60분 전력값의 산술평균입니다.
+전체 6,000개 window 중 셧다운 Target 17개를 제외하여 5,983개를 사용합니다.
+
+하이퍼파라미터 탐색은 다음 세 개의 expanding fold를 사용합니다. 각 평가 구간 직전 14일은 early stopping 전용이며 평가 점수 계산에 섞지 않습니다.
+
+| Fold | train | early stopping | 평가 | 표본 수(train / early stopping / 평가) |
+|---|---|---|---|---:|
+| 1 | 2021-05-01 23:00 이전 | 2021-05-02 ~ 05-15 | 2021-05-16 ~ 06-15 | 2,736 / 336 / 744 |
+| 2 | 2021-06-01 23:00 이전 | 2021-06-02 ~ 06-15 | 2021-06-16 ~ 07-15 | 3,480 / 336 / 720 |
+| 3 | 2021-07-01 23:00 이전 | 2021-07-02 ~ 07-15 | 2021-07-16 ~ 08-15 | 4,200 / 336 / 744 |
+
+임시 7:2:1 분할이 다시 필요하면 `prepare_data.py --split-strategy ratio`를 사용할 수 있습니다. 기본값은 `lhs`입니다.
 
 ## 실행
 
-Anaconda Prompt에서 다음 명령을 실행합니다.
+Anaconda 환경을 만들거나 갱신한 뒤 실행합니다.
 
 ```powershell
+conda env update --name kamp-competition --file environment.yml
 conda activate kamp-competition
-python run_models.py --data data/preprocessed.npz --output outputs/experiment_01
 ```
 
-원본 CSV부터 한 번에 실행할 수도 있습니다. 같은 폴더의 `okm_cleaned_2021.csv`를 자동으로 찾아 `kjh` 전처리 결과와 정확히 일치하는지 검증합니다.
+원본 CSV부터 전처리, window 생성, 전체 모델 비교까지 한 번에 실행합니다.
 
 ```powershell
 python run_models.py --data data/okm_augumented_2021.csv --output outputs/experiment_01
 ```
 
-학습 없이 전처리와 7:2:1 NPZ 생성만 실행하려면 다음 명령을 사용합니다.
+전처리와 공통 분할 파일만 만들 수도 있습니다.
 
 ```powershell
 python prepare_data.py --input data/okm_augumented_2021.csv `
   --cleaned-reference data/okm_cleaned_2021.csv `
-  --output outputs/prepared/model_input_7_2_1.npz
+  --output outputs/prepared/model_input_lhs.npz
 ```
 
-전체 탐색 전에 코드와 데이터 연결만 확인하려면 다음처럼 실행합니다. `--quick`은 트리 모델의 단일 조합과 사전학습 모델의 F0·첫 학습률·1 optimizer step만 실행합니다.
+연결 상태만 빠르게 확인하려면 트리 모델을 smoke 조건으로 실행합니다.
 
 ```powershell
-python run_models.py --data data/preprocessed.npz --output outputs/smoke --quick
+python run_models.py --data outputs/prepared/model_input_lhs.npz `
+  --models xgboost lightgbm --quick --output outputs/smoke
 ```
 
-특정 모델만 실행할 수도 있습니다.
+## 학습과 fine tuning
 
-```powershell
-python run_models.py --data data/preprocessed.npz --models xgboost lightgbm --output outputs/trees
-```
+- XGBoost와 LightGBM은 문서의 전체 grid를 세 개의 LHS fold에서 평가하고 평균 RMSE가 가장 낮은 조합을 선택합니다.
+- TimesFM 3.0, Chronos-2, Moirai 2.0은 zero-shot과 fine-tuning 결과를 모두 생성합니다.
+- 사전학습 모델의 fine-tuning 범위는 F0~F7, 학습률은 `1e-6`, `1e-5`, `1e-4`이며 각 조합을 동일한 세 fold에서 비교합니다.
+- 유효 batch size는 32, 최대 optimizer step은 1,000, 검증 주기는 100 step, early stopping patience는 3입니다.
+- 최종 비교 지표는 RMSE, MAE, R²만 사용합니다.
 
-모델 구현은 `kamp_models/models/` 아래의 `xgboost.py`, `lightgbm.py`, `timesfm3.py`, `chronos2.py`, `moirai2.py`로 분리되어 있습니다. `kamp_models/runner.py`가 설정을 읽고 이 모델들을 순서대로 실행해 하나의 비교표로 합칩니다. 공통 시계열 fold와 미세조정 루프는 `foundation_common.py`, F0~F7 동결 규칙은 `finetuning.py`에 있습니다.
-
-## 학습 방식
-
-- XGBoost와 LightGBM은 문서에 제시된 108개 조합을 각각 3개 `TimeSeriesSplit` fold로 평가합니다. 각 예측 시차는 독립 회귀기로 학습하며, 검증 RMSE가 가장 낮은 조합을 전체 train+validation 데이터로 다시 학습합니다.
-- TimesFM 3.0, Chronos-2, Moirai 2.0은 모두 zero-shot 결과와 미세조정 결과를 생성합니다.
-- 미세조정 탐색은 모델마다 `F0~F7 × 학습률 [1e-6, 1e-5, 1e-4] × 3개 expanding fold`, 총 72회입니다. 각 실험은 원본 사전학습 체크포인트에서 독립적으로 시작합니다.
-- F0은 출력부만 학습합니다. F1/F2는 마지막 1/2개 Transformer 블록과 출력부를 학습합니다. F3~F6은 문서의 모델별 블록 수를 적용하고 F7은 입력부를 포함한 전체 파라미터를 학습합니다.
-- 유효 배치는 32, 최대 optimizer step은 1,000, 검증 주기는 100 step, 조기 종료 patience는 3회입니다. 물리 배치는 기본 1이고 gradient accumulation 32회로 유효 배치를 맞춥니다.
-- fold 평균 검증 RMSE가 가장 낮은 범위와 학습률을 선택합니다. fold별 최적 step의 중앙값으로 전체 train+validation 구간을 고정 seed 42에서 다시 학습합니다.
-- 모든 모델의 최종 비교 지표는 시험 구간의 다음 1시간 평균 전력사용량 예측에 대한 RMSE, MAE, R²입니다.
-
-기본 Anaconda 환경에 설치된 PyTorch가 CPU 빌드라면 전체 탐색 시간이 매우 깁니다. CUDA PyTorch 환경에서는 `device = "auto"`가 GPU를 자동 선택합니다. GPU 메모리가 허용되면 `train_batch_size`를 2, 4처럼 늘리되 32의 약수로 두면 됩니다.
+모델별 구현은 `kamp_models/models/`의 별도 Python 파일에 있고 `kamp_models/runner.py`가 순서대로 실행해 하나의 비교표를 만듭니다.
 
 ## 결과 파일
 
-- `comparison.csv`: 트리 모델과 사전학습 모델의 zero-shot(`*_zs`)·미세조정(`*_ft`) 결과, RMSE, MAE, R², 학습·추론 시간
-- `search_results_xgboost.csv`, `search_results_lightgbm.csv`: 모든 fold 탐색 결과
-- `finetune_search_results_<model>.csv`: F0~F7, 학습률, fold별 RMSE, MAE, R², 최적 step과 파라미터 수
-- `predictions/<model>.csv`: 표본과 예측 시차별 정답·예측값
-- `models/*.joblib`: 최종 트리 모델
-- `models/timesfm3`, `models/moirai2`: 원본 체크포인트에 덮어쓸 미세조정 파라미터
-- `models/chronos2`: seed 42 최종 Chronos 체크포인트와 선택 설정
-- `run_metadata.json`: 실행 환경과 데이터 크기
+- `comparison.csv`: 모델별 RMSE, MAE, R²와 실행 시간
+- `search_results_xgboost.csv`, `search_results_lightgbm.csv`: fold별 grid 탐색 결과
+- `finetune_search_results_<model>.csv`: 사전학습 모델의 F0~F7, 학습률, fold 결과
+- `predictions/<model>.csv`: 정답과 예측값
+- `models/`: 최종 모델 또는 fine-tuned checkpoint
+- `run_metadata.json`: 실행 환경, 데이터 크기, 장치, fine-tuning 조건
 
-사전학습 모델 패키지나 모델 가중치 다운로드가 실패해도 다른 모델은 계속 실행되며, 실패 원인은 `comparison.csv`의 `error` 열에 기록됩니다.
+GPU를 사용할 수 있으면 자동으로 사용하고, 해당 라이브러리의 GPU 빌드나 장치가 없으면 그 모델만 CPU로 실행합니다.

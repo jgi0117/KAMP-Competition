@@ -9,11 +9,8 @@ import numpy as np
 import pandas as pd
 from pandas.testing import assert_frame_equal
 
-
-TARGET_COLUMN = "전력_평균_실수"
-DATE_COLUMN = "날짜"
-HOUR_COLUMN = "시간"
-EXCLUDED_FEATURE_COLUMNS = {DATE_COLUMN, "시간_raw"}
+from .schema import DATE_COLUMN, FEATURE_COLUMNS, HOUR_COLUMN, TARGET_COLUMN
+from .splitting import LHS_EARLY_STOP_DAYS, LHS_TEST_START
 
 
 @dataclass(frozen=True)
@@ -25,6 +22,8 @@ class PreparationReport:
     context_length: int
     horizon: int
     feature_count: int
+    split_strategy: str
+    window_count: int
     sample_count: int
     train_samples: int
     val_samples: int
@@ -127,12 +126,10 @@ def make_supervised_windows(
     if len(cleaned) < context_length + horizon:
         raise ValueError("Not enough rows to create one forecasting window")
 
-    feature_columns = [TARGET_COLUMN]
-    feature_columns.extend(
-        column
-        for column in cleaned.select_dtypes(include=["number", "bool"]).columns
-        if column not in EXCLUDED_FEATURE_COLUMNS and column != TARGET_COLUMN
-    )
+    feature_columns = list(FEATURE_COLUMNS)
+    missing_features = [column for column in feature_columns if column not in cleaned]
+    if missing_features:
+        raise KeyError(f"Cleaned data is missing canonical features: {missing_features}")
     feature_values = cleaned[feature_columns].astype(np.float32).to_numpy()
     target_values = cleaned[TARGET_COLUMN].astype(np.float32).to_numpy()
 
@@ -167,10 +164,15 @@ def prepare_csv_to_npz(
     train_ratio: float = 0.7,
     val_ratio: float = 0.2,
     test_ratio: float = 0.1,
+    split_strategy: str = "lhs",
+    exclude_shutdown_targets: bool = True,
     cleaned_reference: str | Path | None = None,
     report_json: str | Path | None = None,
 ) -> PreparationReport:
-    _validate_ratios(train_ratio, val_ratio, test_ratio)
+    if split_strategy not in {"lhs", "ratio"}:
+        raise ValueError("split_strategy must be 'lhs' or 'ratio'")
+    if split_strategy == "ratio":
+        _validate_ratios(train_ratio, val_ratio, test_ratio)
     source = Path(source_csv)
     destination = Path(output_npz)
     cleaned, source_kind = load_or_clean_csv(source)
@@ -196,21 +198,47 @@ def prepare_csv_to_npz(
         context_length=context_length,
         horizon=horizon,
     )
-    sample_count = len(y)
-    train_end = int(sample_count * train_ratio)
-    val_end = train_end + int(sample_count * val_ratio)
-    if train_end == 0 or val_end == train_end or val_end == sample_count:
-        raise ValueError("Split ratios produce an empty train, validation, or test split")
-
-    boundaries = {
-        "train": slice(0, train_end),
-        "val": slice(train_end, val_end),
-        "test": slice(val_end, sample_count),
+    window_count = len(y)
+    if split_strategy == "ratio":
+        train_end = int(window_count * train_ratio)
+        val_end = train_end + int(window_count * val_ratio)
+        boundaries: dict[str, slice | np.ndarray] = {
+            "train": slice(0, train_end),
+            "val": slice(train_end, val_end),
+            "test": slice(val_end, window_count),
+        }
+    else:
+        timestamps = target_timestamps.astype("datetime64[ns]")
+        val_start = LHS_TEST_START - np.timedelta64(LHS_EARLY_STOP_DAYS, "D")
+        keep = np.ones(window_count, dtype=bool)
+        if exclude_shutdown_targets:
+            shutdown = cleaned.get(
+                "공장_셧다운_여부", cleaned[TARGET_COLUMN].eq(0)
+            ).astype(bool).to_numpy()
+            shutdown_targets = np.lib.stride_tricks.sliding_window_view(
+                shutdown[context_length:], window_shape=horizon
+            )[:window_count]
+            keep &= ~shutdown_targets.any(axis=1)
+        boundaries = {
+            "train": np.flatnonzero(keep & (timestamps < val_start)),
+            "val": np.flatnonzero(
+                keep & (timestamps >= val_start) & (timestamps < LHS_TEST_START)
+            ),
+            "test": np.flatnonzero(keep & (timestamps >= LHS_TEST_START)),
+        }
+    split_counts = {
+        name: len(np.arange(window_count)[boundary])
+        for name, boundary in boundaries.items()
     }
+    if any(count == 0 for count in split_counts.values()):
+        raise ValueError("Split strategy produces an empty train, validation, or test split")
+    sample_count = sum(split_counts.values())
     payload: dict[str, np.ndarray] = {
         "feature_names": feature_names,
+        "split_strategy": np.asarray(split_strategy),
         "split_ratios": np.asarray(
-            [train_ratio, val_ratio, test_ratio], dtype=np.float32
+            [split_counts[name] / sample_count for name in ("train", "val", "test")],
+            dtype=np.float32,
         ),
     }
     for split_name, boundary in boundaries.items():
@@ -229,13 +257,15 @@ def prepare_csv_to_npz(
         context_length=context_length,
         horizon=horizon,
         feature_count=X.shape[2],
+        split_strategy=split_strategy,
+        window_count=window_count,
         sample_count=sample_count,
-        train_samples=train_end,
-        val_samples=val_end - train_end,
-        test_samples=sample_count - val_end,
-        train_ratio=train_ratio,
-        val_ratio=val_ratio,
-        test_ratio=test_ratio,
+        train_samples=split_counts["train"],
+        val_samples=split_counts["val"],
+        test_samples=split_counts["test"],
+        train_ratio=split_counts["train"] / sample_count,
+        val_ratio=split_counts["val"] / sample_count,
+        test_ratio=split_counts["test"] / sample_count,
         cleaned_reference=(str(reference_path.resolve()) if reference_path else None),
         cleaned_reference_match=reference_match,
         generated_cleaned_sha256=generated_hash,

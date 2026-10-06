@@ -9,7 +9,12 @@ from kamp_models.finetuning import (
     apply_finetune_scope,
     train_torch_point_model,
 )
+from kamp_models.foundation_common import resolve_device
 from kamp_models.metrics import regression_metrics
+from kamp_models.models.lightgbm import _build_estimator as build_lightgbm_estimator
+from kamp_models.models.lightgbm import _resolve_device as resolve_lightgbm_device
+from kamp_models.models.xgboost import _build_estimator as build_xgboost_estimator
+from kamp_models.models.xgboost import _resolve_device as resolve_xgboost_device
 from kamp_models.tree_models import run_tree_model
 
 
@@ -102,6 +107,56 @@ def test_tree_model_training_pipeline(tmp_path, model_name, param_grid):
     assert result.predictions.shape == (5, 1)
     assert result.model_path.is_file()
     assert set(("rmse", "mae", "r2")).issubset(result.search_results.columns)
+
+
+def test_tree_estimators_map_cuda_device():
+    xgboost = build_xgboost_estimator({}, seed=42, n_jobs=1, device="cuda")
+    lightgbm = build_lightgbm_estimator({}, seed=42, n_jobs=1, device="cuda")
+
+    assert xgboost.estimator.get_params()["device"] == "cuda"
+    assert lightgbm.estimator.get_params()["device_type"] == "gpu"
+
+
+def test_lightgbm_falls_back_to_cpu_when_gpu_build_is_missing(monkeypatch):
+    import lightgbm
+    from lightgbm.basic import LightGBMError
+
+    class NoGpuRegressor:
+        def __init__(self, **kwargs):
+            pass
+
+        def fit(self, features, targets):
+            raise LightGBMError("GPU Tree Learner was not enabled in this build.")
+
+    monkeypatch.setattr(lightgbm, "LGBMRegressor", NoGpuRegressor)
+
+    with pytest.warns(RuntimeWarning, match="retrying this model on CPU"):
+        assert resolve_lightgbm_device("cuda") == "cpu"
+
+
+def test_xgboost_falls_back_to_cpu_when_gpu_is_not_accessible(monkeypatch):
+    import xgboost
+
+    class NoGpuRegressor:
+        def __init__(self, **kwargs):
+            pass
+
+        def fit(self, features, targets):
+            import warnings
+
+            warnings.warn("No visible GPU is found, setting device to CPU.")
+
+    monkeypatch.setattr(xgboost, "XGBRegressor", NoGpuRegressor)
+
+    with pytest.warns(RuntimeWarning, match="cannot access a CUDA device"):
+        assert resolve_xgboost_device("cuda") == "cpu"
+
+
+def test_auto_device_matches_torch_cuda_availability():
+    torch = pytest.importorskip("torch")
+
+    expected = "cuda" if torch.cuda.is_available() else "cpu"
+    assert resolve_device("auto") == expected
 
 
 def test_finetune_settings_match_document_conditions():

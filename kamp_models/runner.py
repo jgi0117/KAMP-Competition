@@ -58,6 +58,7 @@ def _write_predictions(
 def _base_row(model_name: str) -> dict[str, Any]:
     return {
         "model": model_name,
+        "device": "",
         "status": "error",
         "mode": "",
         "rmse": np.nan,
@@ -96,6 +97,7 @@ def run_experiment(
     )
     device = resolve_device(str(foundation.get("device", "auto")))
     batch_size = int(foundation.get("batch_size", 16))
+    tree_device = resolve_device(str(tree_config.get("device", "auto")))
     finetune_settings = FineTuneSettings.from_config(
         foundation.get("finetuning", {}),
         cv_splits=int(experiment.get("cv_splits", 3)),
@@ -116,6 +118,7 @@ def run_experiment(
                     seed=int(experiment.get("seed", 42)),
                     cv_splits=int(experiment.get("cv_splits", 3)),
                     n_jobs=int(tree_config.get("n_jobs", 1)),
+                    device=tree_device,
                     search_profile=(
                         "quick" if quick else str(tree_config.get("search_profile", "full"))
                     ),
@@ -128,6 +131,7 @@ def run_experiment(
                 predictions = result.predictions
                 row.update(
                     mode="trained_grid_search",
+                    device=result.device,
                     train_seconds=result.train_seconds,
                     inference_seconds=result.inference_seconds,
                     best_params=json.dumps(
@@ -180,6 +184,7 @@ def run_experiment(
                     variant_row.update(
                         status="ok",
                         mode=variant.mode,
+                        device=device,
                         train_seconds=variant.train_seconds,
                         inference_seconds=variant.inference_seconds,
                         best_params=json.dumps(
@@ -225,6 +230,12 @@ def run_experiment(
         "data_path": str(Path(data_path).resolve()),
         "models": selected_models,
         "device": device,
+        "tree_device_requested": tree_device,
+        "model_devices": {
+            str(row["model"]): str(row["device"])
+            for row in rows
+            if row["device"]
+        },
         "context_length": data.context_length,
         "horizon": data.horizon,
         "finetuning": {

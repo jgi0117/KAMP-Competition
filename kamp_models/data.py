@@ -11,6 +11,7 @@ class DatasetSplit:
     X: np.ndarray
     y: np.ndarray
     target_history: np.ndarray | None = None
+    target_timestamps: np.ndarray | None = None
 
     @property
     def n_samples(self) -> int:
@@ -93,7 +94,20 @@ def _load_split(
     else:
         history = _infer_target_history(X, context_length, target_feature_index)
 
-    return DatasetSplit(X=X, y=y, target_history=history)
+    timestamp_key = f"target_timestamp_{split}"
+    if timestamp_key in archive.files:
+        timestamps = np.asarray(archive[timestamp_key]).astype("datetime64[ns]")
+        if timestamps.shape != (X.shape[0],):
+            raise ValueError(f"{timestamp_key} must have shape [{X.shape[0]}]")
+    else:
+        timestamps = None
+
+    return DatasetSplit(
+        X=X,
+        y=y,
+        target_history=history,
+        target_timestamps=timestamps,
+    )
 
 
 def load_preprocessed_npz(
@@ -148,4 +162,3 @@ def require_target_history(split: DatasetSplit, split_name: str) -> np.ndarray:
             f"X_{split_name} is not [N, context] or [N, context, features]."
         )
     return split.target_history
-

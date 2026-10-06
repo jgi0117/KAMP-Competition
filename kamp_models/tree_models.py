@@ -9,15 +9,17 @@ from typing import Any, Callable
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import ParameterGrid, TimeSeriesSplit
+from sklearn.model_selection import ParameterGrid
 
 from .data import DatasetBundle, flatten_features
 from .metrics import regression_metrics
+from .splitting import get_temporal_folds
 
 
 @dataclass
 class TreeRunResult:
     model_name: str
+    device: str
     predictions: np.ndarray
     best_params: dict[str, Any]
     search_results: pd.DataFrame
@@ -36,10 +38,14 @@ def run_tree_search(
     n_jobs: int,
     search_profile: str = "full",
     param_grid: dict[str, list[Any]] | None = None,
+    device: str = "cpu",
     full_grid: dict[str, list[Any]],
     quick_grid: dict[str, list[Any]],
-    estimator_factory: Callable[[dict[str, Any], int, int], Any],
+    estimator_factory: Callable[[dict[str, Any], int, int, str], Any],
 ) -> TreeRunResult:
+    if device not in {"cpu", "cuda"}:
+        raise ValueError("tree device must be 'cpu' or 'cuda'")
+
     X_search = flatten_features(np.concatenate([data.train.X, data.val.X], axis=0))
     y_search = np.concatenate([data.train.y, data.val.y], axis=0)
     if len(X_search) <= cv_splits:
@@ -50,23 +56,26 @@ def run_tree_search(
     if param_grid is None:
         param_grid = full_grid if search_profile == "full" else quick_grid
 
-    splitter = TimeSeriesSplit(n_splits=cv_splits)
+    folds = get_temporal_folds(data, cv_splits)
     rows: list[dict[str, Any]] = []
     search_started = time.perf_counter()
 
     for candidate_index, params in enumerate(ParameterGrid(param_grid), start=1):
         fold_metrics: list[dict[str, float]] = []
         fold_started = time.perf_counter()
-        for fold, (train_idx, val_idx) in enumerate(splitter.split(X_search), start=1):
-            estimator = estimator_factory(params, seed, n_jobs)
-            estimator.fit(X_search[train_idx], y_search[train_idx])
-            prediction = estimator.predict(X_search[val_idx])
-            metrics = regression_metrics(y_search[val_idx], prediction)
+        for fold_number, split in enumerate(folds, start=1):
+            estimator = estimator_factory(params, seed, n_jobs, device)
+            estimator.fit(X_search[split.train], y_search[split.train])
+            prediction = estimator.predict(X_search[split.evaluate])
+            metrics = regression_metrics(y_search[split.evaluate], prediction)
             fold_metrics.append(metrics)
             rows.append(
                 {
                     "candidate": candidate_index,
-                    "fold": fold,
+                    "fold": split.name or fold_number,
+                    "n_train": len(split.train),
+                    "n_early_stop": len(split.early_stop),
+                    "n_eval": len(split.evaluate),
                     "params": json.dumps(params, ensure_ascii=False, sort_keys=True),
                     **metrics,
                 }
@@ -91,7 +100,7 @@ def run_tree_search(
     ).iloc[0]
     best_params = json.loads(winner["params"])
 
-    final_model = estimator_factory(best_params, seed, n_jobs)
+    final_model = estimator_factory(best_params, seed, n_jobs, device)
     final_model.fit(X_search, y_search)
     train_seconds = time.perf_counter() - search_started
 
@@ -108,6 +117,7 @@ def run_tree_search(
 
     return TreeRunResult(
         model_name=model_name,
+        device=device,
         predictions=predictions,
         best_params=best_params,
         search_results=results,

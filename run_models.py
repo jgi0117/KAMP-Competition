@@ -51,7 +51,7 @@ def main() -> None:
             candidate = data_path.with_name("okm_cleaned_2021.csv")
             if candidate != data_path and candidate.is_file():
                 reference = candidate
-        prepared_path = output_dir / "prepared" / "model_input_7_2_1.npz"
+        prepared_path = output_dir / "prepared" / "model_input_lhs.npz"
         report = prepare_csv_to_npz(
             data_path,
             prepared_path,
@@ -60,11 +60,15 @@ def main() -> None:
             train_ratio=float(data_config.get("train_ratio", 0.7)),
             val_ratio=float(data_config.get("val_ratio", 0.2)),
             test_ratio=float(data_config.get("test_ratio", 0.1)),
+            split_strategy=str(data_config.get("split_strategy", "lhs")),
+            exclude_shutdown_targets=bool(
+                data_config.get("exclude_shutdown_targets", True)
+            ),
             cleaned_reference=reference,
         )
         data_path = prepared_path
         print(
-            "Prepared chronological splits: "
+            f"Prepared {report.split_strategy} chronological splits: "
             f"train={report.train_samples}, val={report.val_samples}, "
             f"test={report.test_samples}"
         )
