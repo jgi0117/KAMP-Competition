@@ -20,7 +20,7 @@ FULL_GRID = {
 QUICK_GRID = {
     "max_depth": [5],
     "learning_rate": [0.05],
-    "n_estimators": [200],
+    "n_estimators": [20],
     "min_child_weight": [1],
     "colsample_bytree": [1.0],
 }

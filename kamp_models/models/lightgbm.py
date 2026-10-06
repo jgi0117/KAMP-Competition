@@ -20,7 +20,7 @@ FULL_GRID = {
 QUICK_GRID = {
     "num_leaves": [15],
     "learning_rate": [0.05],
-    "n_estimators": [200],
+    "n_estimators": [20],
     "min_child_samples": [20],
     "colsample_bytree": [1.0],
 }

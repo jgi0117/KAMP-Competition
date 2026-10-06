@@ -4,7 +4,7 @@
 
 ## 입력 데이터
 
-입력은 NumPy `npz` 파일 한 개입니다. 시간순으로 분리된 다음 배열이 필요합니다.
+입력은 전처리가 끝난 NumPy `npz` 파일 또는 `kjh` 전처리 대상 CSV입니다. CSV를 전달하면 `src/preprocessing.py`를 실행하고 168시간 윈도우를 만든 뒤 시간순 70%/20%/10%로 자동 분할합니다.
 
 | 키 | 필수 형태 | 설명 |
 |---|---|---|
@@ -14,7 +14,17 @@
 
 `X_*`가 `[표본, 168]`이면 그 배열을 전력 이력으로 자동 사용합니다. `X_*`가 `[표본, 168, 특성]`이면 `model_config.toml`의 `target_feature_index` 열을 전력 이력으로 사용합니다. 이 두 형태가 아니면 `target_history_*`를 별도로 넣어야 합니다.
 
-모든 배열은 시간순이어야 하며 결측값과 무한값이 없어야 합니다. 윈도우 생성, 다음 1시간 평균 산출, 스케일 복원, 날짜 분할은 전처리 단계에서 끝내야 합니다. 평가값은 전달된 원 단위 배열에서 계산합니다.
+직접 NPZ를 전달하는 경우 모든 배열은 시간순이어야 하며 결측값과 무한값이 없어야 합니다. CSV 입력에서는 통합 준비 코드가 윈도우와 분할을 생성합니다. 평가값은 원 단위의 `전력_평균_실수`에서 계산합니다.
+
+현재 임시 분할은 6,000개 예측 윈도우를 다음처럼 나눕니다.
+
+| 분할 | 표본 수 | 예측 대상 시간 |
+|---|---:|---|
+| train | 4,200 | 2021-01-08 00:00 ~ 2021-07-01 23:00 |
+| validation | 1,200 | 2021-07-02 00:00 ~ 2021-08-20 23:00 |
+| test | 600 | 2021-08-21 00:00 ~ 2021-09-14 23:00 |
+
+각 표본은 직전 168시간의 20개 과거 특성을 `X`로 사용하고, 바로 다음 1시간의 `전력_평균_실수`를 `y`로 사용합니다. `전력_평균_실수`는 15분·30분·45분·60분 전력값의 산술평균입니다.
 
 ## 실행
 
@@ -23,6 +33,20 @@ Anaconda Prompt에서 다음 명령을 실행합니다.
 ```powershell
 conda activate kamp-competition
 python run_models.py --data data/preprocessed.npz --output outputs/experiment_01
+```
+
+원본 CSV부터 한 번에 실행할 수도 있습니다. 같은 폴더의 `okm_cleaned_2021.csv`를 자동으로 찾아 `kjh` 전처리 결과와 정확히 일치하는지 검증합니다.
+
+```powershell
+python run_models.py --data data/okm_augumented_2021.csv --output outputs/experiment_01
+```
+
+학습 없이 전처리와 7:2:1 NPZ 생성만 실행하려면 다음 명령을 사용합니다.
+
+```powershell
+python prepare_data.py --input data/okm_augumented_2021.csv `
+  --cleaned-reference data/okm_cleaned_2021.csv `
+  --output outputs/prepared/model_input_7_2_1.npz
 ```
 
 전체 탐색 전에 코드와 데이터 연결만 확인하려면 다음처럼 실행합니다. `--quick`은 트리 모델의 단일 조합과 사전학습 모델의 F0·첫 학습률·1 optimizer step만 실행합니다.

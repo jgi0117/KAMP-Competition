@@ -8,6 +8,8 @@ dependencies:
   - scipy=1.11
   - contourpy<1.4
   - matplotlib
+  - seaborn
+  - python-dotenv
   - python-docx
   - scikit-learn
   - joblib

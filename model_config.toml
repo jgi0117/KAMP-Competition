@@ -1,3 +1,8 @@
+[data]
+train_ratio = 0.7
+val_ratio = 0.2
+test_ratio = 0.1
+
 [experiment]
 context_length = 168
 horizon = 1
