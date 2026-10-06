@@ -1,0 +1,21 @@
+name: kamp-competition
+channels:
+  - defaults
+dependencies:
+  - python=3.12
+  - numpy=1.26
+  - pandas=2.1
+  - scipy=1.11
+  - contourpy<1.4
+  - matplotlib
+  - python-docx
+  - scikit-learn
+  - joblib
+  - pip
+  - pip:
+      - xgboost
+      - lightgbm
+      - transformers<5
+      - chronos-forecasting
+      - timesfm[torch]
+      - uni2ts
