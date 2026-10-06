@@ -144,6 +144,7 @@ def aggregate(results, config_ids, n_folds, seeds=None):
     if df.empty:
         return pd.DataFrame()
     agg = df.groupby("config_id").agg(
+        mse=("mse", "mean"),
         rmse=("rmse", "mean"),
         rmse_std=("rmse", "std"),
         mae=("mae", "mean"),
@@ -209,6 +210,25 @@ def all_stage_ids(model_name, results, n_folds):
     return list(dict.fromkeys(ids))
 
 
+def final_choice(model_name, results, n_folds):
+    """최종 설정 1개와 그 근거. confirm(seed 3개)이 끝났으면 그 결과로, 아니면 seed 42 결과로 고른다.
+
+    반환: (설정 dict, 집계 행, 근거 문자열) 또는 결과가 없으면 (None, None, None)
+    """
+    if results.empty:
+        return None, None, None
+    ids = all_stage_ids(model_name, results, n_folds)
+    agg = aggregate(results, ids, n_folds, CONFIRM_SEEDS)
+    basis = "confirm (seed 3개 × fold 평균)"
+    if agg.empty:
+        agg = aggregate(results, ids, n_folds, [DEFAULT_SEED])
+        basis = "seed 42 결과 (confirm 미완료)"
+    if agg.empty:
+        return None, None, None
+    best = select_best(agg)
+    return json.loads(best["config_id"]), best, basis
+
+
 # =========================================================
 # 학습 1회
 # =========================================================
@@ -223,10 +243,9 @@ def get_split_data(df, split, lookback):
     return _split_cache[key]
 
 
-def run_one(model_name, params, seed, df, split, max_epochs):
+def train_model(model_name, params, seed, data, max_epochs):
+    """학습 구간으로 학습하고 EarlyStopping 구간으로 멈춘다. final_evaluate.py 도 이 함수를 쓴다."""
     from tensorflow import keras
-
-    data = get_split_data(df, split, params["lookback"])
 
     keras.backend.clear_session()
     keras.utils.set_random_seed(seed)
@@ -245,22 +264,31 @@ def run_one(model_name, params, seed, df, split, max_epochs):
         shuffle=True,
         verbose=0,
     )
-    train_seconds = time.time() - start
-
-    y_scaler = data["y_scaler"]
-    pred = y_scaler.inverse_transform(model.predict(data["X_eval"], verbose=0))
-    actual = y_scaler.inverse_transform(data["y_eval"])
-    metrics = evaluate_regression(actual, pred, data["peak_threshold"])
-
     val_loss = history.history["val_loss"]
-    return {
-        **metrics,
+    info = {
         "best_epoch": int(np.argmin(val_loss)) + 1,
         "epochs_run": len(val_loss),
-        "train_seconds": round(train_seconds, 1),
+        "train_seconds": round(time.time() - start, 1),
         "n_train": len(data["y_train"]),
         "n_eval": len(data["y_eval"]),
     }
+    return model, info
+
+
+def predict_kw(model, data):
+    """평가 구간 예측값과 실제값을 kW 단위로 복원해 반환한다."""
+    y_scaler = data["y_scaler"]
+    pred = y_scaler.inverse_transform(model.predict(data["X_eval"], verbose=0)).ravel()
+    actual = y_scaler.inverse_transform(data["y_eval"]).ravel()
+    return pred, actual
+
+
+def run_one(model_name, params, seed, df, split, max_epochs):
+    data = get_split_data(df, split, params["lookback"])
+    model, info = train_model(model_name, params, seed, data, max_epochs)
+    pred, actual = predict_kw(model, data)
+    metrics = evaluate_regression(actual, pred, data["peak_threshold"])
+    return {**metrics, **info}
 
 
 def run_configs(model_name, stage_label, configs, seeds, df, folds, max_epochs):
@@ -357,8 +385,8 @@ def main():
         results = load_results(model_name)
         agg = aggregate(results, [config_id(p) for p in top], n_folds, CONFIRM_SEEDS)
         print_table(agg, "Confirm 결과 (seed 3개 × fold 평균)")
-        best = select_best(agg)
-        print(f"\n최종 선택: {best['config_id']}")
+        params, _, _ = final_choice(model_name, results, n_folds)
+        print(f"\n최종 선택: {config_id(params)}")
         return
 
     stage = int(args.stage)
