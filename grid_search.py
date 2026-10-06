@@ -210,19 +210,24 @@ def all_stage_ids(model_name, results, n_folds):
     return list(dict.fromkeys(ids))
 
 
-def final_choice(model_name, results, n_folds):
-    """최종 설정 1개와 그 근거. confirm(seed 3개)이 끝났으면 그 결과로, 아니면 seed 42 결과로 고른다.
+def final_choice(model_name, results, n_folds, mode="seed42"):
+    """최종 설정 1개와 그 근거.
+
+    mode="seed42"  (팀 공통 기준) 모든 단계의 seed 42 결과(fold 평균)로 고른다.
+    mode="confirm" confirm(seed 3개)이 끝났으면 그 결과로, 아니면 seed 42 결과로 고른다.
 
     반환: (설정 dict, 집계 행, 근거 문자열) 또는 결과가 없으면 (None, None, None)
     """
     if results.empty:
         return None, None, None
     ids = all_stage_ids(model_name, results, n_folds)
-    agg = aggregate(results, ids, n_folds, CONFIRM_SEEDS)
-    basis = "confirm (seed 3개 × fold 평균)"
+    agg = pd.DataFrame()
+    if mode == "confirm":
+        agg = aggregate(results, ids, n_folds, CONFIRM_SEEDS)
+        basis = "confirm (seed 3개 × fold 평균)"
     if agg.empty:
         agg = aggregate(results, ids, n_folds, [DEFAULT_SEED])
-        basis = "seed 42 결과 (confirm 미완료)"
+        basis = "seed 42 (fold 평균)" if mode == "seed42" else "seed 42 결과 (confirm 미완료)"
     if agg.empty:
         return None, None, None
     best = select_best(agg)
@@ -385,7 +390,7 @@ def main():
         results = load_results(model_name)
         agg = aggregate(results, [config_id(p) for p in top], n_folds, CONFIRM_SEEDS)
         print_table(agg, "Confirm 결과 (seed 3개 × fold 평균)")
-        params, _, _ = final_choice(model_name, results, n_folds)
+        params, _, _ = final_choice(model_name, results, n_folds, mode="confirm")
         print(f"\n최종 선택: {config_id(params)}")
         return
 

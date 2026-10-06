@@ -107,10 +107,10 @@ footer { font-size: 12.5px; color: var(--muted); display: grid; gap: 4px; }
   <header>
     <span class="eyebrow">KAMP 2026 · OKM 공장 전력 예측 · lhs</span>
     <h1>딥러닝 3종 그리드 서치 결과 (검증 구간)</h1>
-    <p class="lede">LSTM, TCN, TCN-LSTM 세 모델을 같은 데이터와 같은 검증 방식으로 튜닝한 결과입니다. 과거 데이터로 다음 1시간의 평균 전력(kW)을 예측합니다. 아래 숫자는 모두 <b>검증 구간</b> 성능이고, Test 구간(8/16~9/14) 평가는 GPU 사용이 가능해지면 진행합니다.</p>
+    <p class="lede">LSTM, TCN, TCN-LSTM 세 모델을 같은 데이터와 같은 검증 방식으로 튜닝한 결과입니다. 팀 공통 기준에 맞춰 <b>seed 42</b> 한 번 학습한 결과로 비교합니다. 과거 데이터로 다음 1시간의 평균 전력(kW)을 예측합니다. 아래 숫자는 모두 <b>검증 구간</b> 성능이고, Test 구간(8/16~9/14) 평가는 GPU 사용이 가능해지면 진행합니다.</p>
     <div class="meta">
       <span>학습 횟수 <b class="num">315회</b> (LSTM 84 · TCN 120 · TCN-LSTM 111)</span>
-      <span>검증 <b>시간순 fold 3개 × seed 3개</b></span>
+      <span>검증 <b>시간순 fold 3개 · seed 42</b></span>
       <span>환경 <b>Colab T4 GPU</b></span>
       <span>데이터 <b class="num">2021-01-01 ~ 09-14, 6,168시간</b></span>
     </div>
@@ -119,18 +119,18 @@ footer { font-size: 12.5px; color: var(--muted); display: grid; gap: 4px; }
   <section aria-labelledby="s-summary">
     <div class="sec-head">
       <h2 id="s-summary">모델별 최종 성능</h2>
-      <p class="note">각 모델이 튜닝으로 고른 최종 설정을 fold 3개 × seed 3개, 총 9번 학습한 평균입니다. 작은 글씨는 9번 사이의 표준편차입니다. MSE·RMSE·MAE는 낮을수록, R²는 1에 가까울수록 좋습니다.</p>
+      <p class="note">각 모델이 튜닝으로 고른 최종 설정을 seed 42로 학습해, 검증 기간 3개(fold)에서 얻은 값의 평균입니다. 작은 글씨는 fold 3개 사이의 표준편차입니다. MSE·RMSE·MAE는 낮을수록, R²는 1에 가까울수록 좋습니다.</p>
     </div>
     <div class="panel table-scroll">
       <table id="summary-table"></table>
     </div>
-    <p class="callout">검증 기준으로는 <b>TCN</b>이 네 지표 모두에서 가장 좋습니다. LSTM보다 RMSE가 약 1.7 kW 낮고, 학습도 약 3배 빠릅니다. TCN과 LSTM을 하나로 연결한 TCN-LSTM은 TCN 단독보다 좋아지지 않았습니다.</p>
+    <p class="callout">검증 기준으로는 <b>TCN</b>이 네 지표 모두에서 가장 좋습니다. LSTM보다 RMSE가 약 1.6 kW 낮고, 학습도 약 4배 빠릅니다. TCN과 LSTM을 하나로 연결한 TCN-LSTM은 LSTM보다는 좋지만 TCN 단독에는 미치지 못했습니다.</p>
   </section>
 
   <section aria-labelledby="s-metrics">
     <div class="sec-head">
       <h2 id="s-metrics">지표별 비교</h2>
-      <p class="note">점은 9번 평균, 가로 막대는 평균 ± 1 표준편차입니다. 지표마다 단위가 달라서 차트를 나눴습니다.</p>
+      <p class="note">점은 fold 3개 평균, 가로 막대는 평균 ± 1 표준편차(fold 간 차이)입니다. 지표마다 단위가 달라서 차트를 나눴습니다.</p>
     </div>
     <div class="legend" id="legend-1"></div>
     <div class="trio">
@@ -143,7 +143,7 @@ footer { font-size: 12.5px; color: var(--muted); display: grid; gap: 4px; }
   <section aria-labelledby="s-folds">
     <div class="sec-head">
       <h2 id="s-folds">검증 기간별 성능</h2>
-      <p class="note">fold마다 그 이전 데이터 전체로 학습하고 31일을 검증합니다. 값은 seed 3개 평균입니다.</p>
+      <p class="note">fold마다 그 이전 데이터 전체로 학습하고 31일을 검증합니다. 값은 seed 42 결과입니다.</p>
     </div>
     <div class="panel chart-card">
       <div class="toolbar">
@@ -177,10 +177,19 @@ footer { font-size: 12.5px; color: var(--muted); display: grid; gap: 4px; }
   <section aria-labelledby="s-stages">
     <div class="sec-head">
       <h2 id="s-stages">튜닝 단계별 선택 과정</h2>
-      <p class="note">한 번에 모든 조합을 돌리지 않고, 한 단계에서 고른 값을 고정한 채 다음 단계로 넘어갔습니다. Stage 1~4는 seed 42 결과, Confirm은 상위 3개 설정을 seed 3개로 다시 확인한 결과입니다. 선택 규칙은 "RMSE 최저값 대비 2% 이내 설정 중 피크 구간 MAE가 가장 작은 것"입니다.</p>
+      <p class="note">한 번에 모든 조합을 돌리지 않고, 한 단계에서 고른 값을 고정한 채 다음 단계로 넘어갔습니다. 모든 단계를 seed 42, fold 3개 평균으로 비교했습니다. Stage 4에서 고른 설정이 최종 설정입니다. 선택 규칙은 "RMSE 최저값 대비 2% 이내 설정 중 피크 구간 MAE가 가장 작은 것"입니다.</p>
     </div>
     <div class="stages" id="stages"></div>
-    <p class="callout">TCN-LSTM은 seed 42에서 RMSE 11.04였지만 seed 3개 평균은 12.64였습니다. seed 하나만 보고 골랐다면 성능을 과대평가할 뻔했습니다. Confirm 단계를 둔 이유입니다.</p>
+    
+  </section>
+
+  <section aria-labelledby="s-seeds">
+    <div class="sec-head">
+      <h2 id="s-seeds">참고: seed에 따른 결과 차이</h2>
+      <p class="note">팀 비교는 seed 42 기준이지만, 결과가 우연인지 확인하려고 최종 설정을 seed 17과 73으로도 학습해 봤습니다. 값은 fold 3개 평균 RMSE(kW)입니다.</p>
+    </div>
+    <div class="panel table-scroll"><table id="seed-table"></table></div>
+    <p class="callout">LSTM과 TCN은 seed가 바뀌어도 RMSE 차이가 0.5 kW 이내로 안정적입니다. TCN-LSTM은 seed 42에서 11.04였지만 seed 17에서는 13.84로, seed에 따라 크게 흔들립니다. seed 42 결과의 TCN-LSTM 순위는 조심해서 해석해야 합니다.</p>
   </section>
 
   <section aria-labelledby="s-defs">
@@ -195,7 +204,7 @@ footer { font-size: 12.5px; color: var(--muted); display: grid; gap: 4px; }
   <section aria-labelledby="s-next">
     <div class="sec-head"><h2 id="s-next">다음 단계</h2></div>
     <div class="panel">
-      <p>모델별 최종 설정으로 1/1~8/15 데이터를 사용해 다시 학습하고, <b>Test 구간(8/16~9/14, 셧다운 17시간 제외)</b>에서 한 번만 평가합니다. 같은 자리에서 IEEE EECR 2023 방식의 <b>Weighted Ensemble</b>(LSTM + TCN)도 평가합니다. 가중치는 검증 MSE의 역수로 정하며, 현재 결과로 계산하면 <b>TCN <span class="num" id="w-tcn"></span>, LSTM <span class="num" id="w-lstm"></span></b>입니다.</p>
+      <p>모델별 최종 설정으로 1/1~8/15 데이터를 사용해 다시 학습하고, <b>Test 구간(8/16~9/14, 셧다운 17시간 제외)</b>에서 한 번만 평가합니다. 같은 자리에서 IEEE EECR 2023 방식의 <b>Weighted Ensemble</b>(LSTM + TCN)도 평가합니다. Test 학습도 seed 42로 한 번만 합니다. 가중치는 검증 MSE(seed 42)의 역수로 정하며, 현재 결과로 계산하면 <b>TCN <span class="num" id="w-tcn"></span>, LSTM <span class="num" id="w-lstm"></span></b>입니다.</p>
     </div>
   </section>
 
@@ -207,7 +216,7 @@ footer { font-size: 12.5px; color: var(--muted); display: grid; gap: 4px; }
 <div id="tip" hidden></div>
 
 <script>
-const DATA = {"weights": {"lstm": 0.423, "tcn": 0.577}, "models": {"lstm": {"params": {"batch_size": 16, "dropout": 0.3, "hidden_units": 128, "learning_rate": 0.001, "lookback": 168, "num_layers": 2}, "runs": 84, "sec": 151.0, "mse": {"mean": 155.77, "std": 61.48, "min": 99.27, "max": 258.29}, "rmse": {"mean": 12.28, "std": 2.39, "min": 9.96, "max": 16.07}, "r2": {"mean": 0.9529, "std": 0.0213, "min": 0.9183, "max": 0.9754}, "mae": {"mean": 8.27, "std": 1.53, "min": 6.61, "max": 10.81}, "peak_mae": {"mean": 16.31, "std": 4.17, "min": 11.1, "max": 22.69}, "folds": {"fold1": {"mse": 115.4, "rmse": 10.71, "r2": 0.961, "mae": 7.54}, "fold2": {"mse": 233.5, "rmse": 15.27, "r2": 0.926, "mae": 10.1}, "fold3": {"mse": 118.4, "rmse": 10.85, "r2": 0.971, "mae": 7.19}}, "progress": [{"stage": "Stage 1", "rmse": 12.9, "mse": 172.2, "r2": 0.949, "params": {"batch_size": 32, "dropout": 0.2, "hidden_units": 64, "learning_rate": 0.001, "lookback": 168, "num_layers": 1}}, {"stage": "Stage 2", "rmse": 12.33, "mse": 154.8, "r2": 0.953, "params": {"batch_size": 32, "dropout": 0.2, "hidden_units": 128, "learning_rate": 0.001, "lookback": 168, "num_layers": 2}}, {"stage": "Stage 3", "rmse": 12.19, "mse": 151.5, "r2": 0.955, "params": {"batch_size": 32, "dropout": 0.3, "hidden_units": 128, "learning_rate": 0.001, "lookback": 168, "num_layers": 2}}, {"stage": "Stage 4", "rmse": 12.2, "mse": 152.4, "r2": 0.955, "params": {"batch_size": 16, "dropout": 0.3, "hidden_units": 128, "learning_rate": 0.001, "lookback": 168, "num_layers": 2}}, {"stage": "Confirm", "rmse": 12.28, "mse": 155.8, "r2": 0.953, "params": {"batch_size": 16, "dropout": 0.3, "hidden_units": 128, "learning_rate": 0.001, "lookback": 168, "num_layers": 2}}], "lookback": [{"lookback": 24, "rmse": 14.847, "r2": 0.9342, "mse": 226.03}, {"lookback": 48, "rmse": 13.229, "r2": 0.9464, "mse": 178.74}, {"lookback": 72, "rmse": 15.3, "r2": 0.9294, "mse": 238.29}, {"lookback": 168, "rmse": 12.904, "r2": 0.9489, "mse": 172.15}]}, "tcn": {"params": {"batch_size": 16, "dilations": "auto+1", "dropout": 0.3, "filters": 128, "kernel_size": 2, "learning_rate": 0.001, "lookback": 24}, "runs": 120, "sec": 52.0, "mse": {"mean": 113.97, "std": 28.68, "min": 75.64, "max": 153.26}, "rmse": {"mean": 10.6, "std": 1.34, "min": 8.7, "max": 12.38}, "r2": {"mean": 0.9659, "std": 0.0103, "min": 0.9515, "max": 0.9778}, "mae": {"mean": 7.3, "std": 0.87, "min": 6.2, "max": 8.35}, "peak_mae": {"mean": 13.21, "std": 2.73, "min": 9.06, "max": 17.84}, "folds": {"fold1": {"mse": 88.3, "rmse": 9.38, "r2": 0.97, "mae": 6.54}, "fold2": {"mse": 148.7, "rmse": 12.19, "r2": 0.953, "mae": 8.25}, "fold3": {"mse": 104.9, "rmse": 10.23, "r2": 0.974, "mae": 7.1}}, "progress": [{"stage": "Stage 1", "rmse": 11.27, "mse": 130.6, "r2": 0.961, "params": {"batch_size": 32, "dilations": "auto", "dropout": 0.2, "filters": 64, "kernel_size": 3, "learning_rate": 0.001, "lookback": 24}}, {"stage": "Stage 2", "rmse": 10.93, "mse": 120.8, "r2": 0.964, "params": {"batch_size": 32, "dilations": "auto+1", "dropout": 0.2, "filters": 128, "kernel_size": 2, "learning_rate": 0.001, "lookback": 24}}, {"stage": "Stage 3", "rmse": 10.58, "mse": 116.0, "r2": 0.965, "params": {"batch_size": 32, "dilations": "auto+1", "dropout": 0.3, "filters": 128, "kernel_size": 2, "learning_rate": 0.001, "lookback": 24}}, {"stage": "Stage 4", "rmse": 10.58, "mse": 116.0, "r2": 0.965, "params": {"batch_size": 32, "dilations": "auto+1", "dropout": 0.3, "filters": 128, "kernel_size": 2, "learning_rate": 0.001, "lookback": 24}}, {"stage": "Confirm", "rmse": 10.6, "mse": 114.0, "r2": 0.966, "params": {"batch_size": 16, "dilations": "auto+1", "dropout": 0.3, "filters": 128, "kernel_size": 2, "learning_rate": 0.001, "lookback": 24}}], "lookback": [{"lookback": 24, "rmse": 11.269, "r2": 0.9607, "mse": 130.55}, {"lookback": 48, "rmse": 11.754, "r2": 0.9587, "mse": 138.32}, {"lookback": 72, "rmse": 13.507, "r2": 0.9453, "mse": 186.39}, {"lookback": 168, "rmse": 14.66, "r2": 0.9367, "mse": 225.05}]}, "tcn_lstm": {"params": {"batch_size": 32, "dilations": "auto", "dropout": 0.2, "filters": 64, "kernel_size": 3, "learning_rate": 0.001, "lookback": 48, "lstm_units": 64}, "runs": 111, "sec": 49.0, "mse": {"mean": 164.04, "std": 56.4, "min": 88.62, "max": 253.16}, "rmse": {"mean": 12.64, "std": 2.18, "min": 9.41, "max": 15.91}, "r2": {"mean": 0.9512, "std": 0.0185, "min": 0.92, "max": 0.9703}, "mae": {"mean": 8.88, "std": 1.29, "min": 6.92, "max": 10.78}, "peak_mae": {"mean": 17.89, "std": 5.42, "min": 9.89, "max": 26.06}, "folds": {"fold1": {"mse": 115.8, "rmse": 10.7, "r2": 0.961, "mae": 7.83}, "fold2": {"mse": 218.3, "rmse": 14.69, "r2": 0.931, "mae": 10.01}, "fold3": {"mse": 158.0, "rmse": 12.53, "r2": 0.961, "mae": 8.8}}, "progress": [{"stage": "Stage 1", "rmse": 11.04, "mse": 123.4, "r2": 0.963, "params": {"batch_size": 32, "dilations": "auto", "dropout": 0.2, "filters": 64, "kernel_size": 3, "learning_rate": 0.001, "lookback": 48, "lstm_units": 64}}, {"stage": "Stage 2", "rmse": 11.04, "mse": 123.4, "r2": 0.963, "params": {"batch_size": 32, "dilations": "auto", "dropout": 0.2, "filters": 64, "kernel_size": 3, "learning_rate": 0.001, "lookback": 48, "lstm_units": 64}}, {"stage": "Stage 3", "rmse": 11.04, "mse": 123.4, "r2": 0.963, "params": {"batch_size": 32, "dilations": "auto", "dropout": 0.2, "filters": 64, "kernel_size": 3, "learning_rate": 0.001, "lookback": 48, "lstm_units": 64}}, {"stage": "Stage 4", "rmse": 11.04, "mse": 123.4, "r2": 0.963, "params": {"batch_size": 32, "dilations": "auto", "dropout": 0.2, "filters": 64, "kernel_size": 3, "learning_rate": 0.001, "lookback": 48, "lstm_units": 64}}, {"stage": "Confirm", "rmse": 12.64, "mse": 164.0, "r2": 0.951, "params": {"batch_size": 32, "dilations": "auto", "dropout": 0.2, "filters": 64, "kernel_size": 3, "learning_rate": 0.001, "lookback": 48, "lstm_units": 64}}], "lookback": [{"lookback": 24, "rmse": 12.499, "r2": 0.9516, "mse": 162.69}, {"lookback": 48, "rmse": 11.039, "r2": 0.9634, "mse": 123.44}, {"lookback": 72, "rmse": 15.202, "r2": 0.9315, "mse": 236.22}, {"lookback": 168, "rmse": 17.179, "r2": 0.913, "mse": 310.2}]}}};
+const DATA = {"models": {"lstm": {"params": {"batch_size": 16, "dropout": 0.3, "hidden_units": 128, "learning_rate": 0.001, "lookback": 168, "num_layers": 2}, "runs": 84, "sec": 153.0, "mse": {"mean": 152.38, "std": 57.41, "min": 99.27, "max": 213.28}, "rmse": {"mean": 12.2, "std": 2.33, "min": 9.96, "max": 14.6}, "r2": {"mean": 0.9547, "std": 0.0192, "min": 0.9326, "max": 0.9667}, "mae": {"mean": 8.16, "std": 1.35, "min": 6.78, "max": 9.48}, "folds": {"fold1": {"mse": 99.3, "rmse": 9.96, "r2": 0.967, "mae": 6.78}, "fold2": {"mse": 213.3, "rmse": 14.6, "r2": 0.933, "mae": 9.48}, "fold3": {"mse": 144.6, "rmse": 12.02, "r2": 0.965, "mae": 8.21}}, "progress": [{"stage": "Stage 1", "rmse": 12.9, "mse": 172.2, "r2": 0.949, "params": {"batch_size": 32, "dropout": 0.2, "hidden_units": 64, "learning_rate": 0.001, "lookback": 168, "num_layers": 1}}, {"stage": "Stage 2", "rmse": 12.33, "mse": 154.8, "r2": 0.953, "params": {"batch_size": 32, "dropout": 0.2, "hidden_units": 128, "learning_rate": 0.001, "lookback": 168, "num_layers": 2}}, {"stage": "Stage 3", "rmse": 12.19, "mse": 151.5, "r2": 0.955, "params": {"batch_size": 32, "dropout": 0.3, "hidden_units": 128, "learning_rate": 0.001, "lookback": 168, "num_layers": 2}}, {"stage": "Stage 4", "rmse": 12.2, "mse": 152.4, "r2": 0.955, "params": {"batch_size": 16, "dropout": 0.3, "hidden_units": 128, "learning_rate": 0.001, "lookback": 168, "num_layers": 2}}], "lookback": [{"lookback": 24, "rmse": 14.847, "r2": 0.9342, "mse": 226.03}, {"lookback": 48, "rmse": 13.229, "r2": 0.9464, "mse": 178.74}, {"lookback": 72, "rmse": 15.3, "r2": 0.9294, "mse": 238.29}, {"lookback": 168, "rmse": 12.904, "r2": 0.9489, "mse": 172.15}], "seeds": {"17": {"rmse": 12.33, "mse": 156.5, "r2": 0.952}, "42": {"rmse": 12.2, "mse": 152.4, "r2": 0.955}, "73": {"rmse": 12.3, "mse": 158.4, "r2": 0.952}}}, "tcn": {"params": {"batch_size": 32, "dilations": "auto+1", "dropout": 0.3, "filters": 128, "kernel_size": 2, "learning_rate": 0.001, "lookback": 24}, "runs": 120, "sec": 39.0, "mse": {"mean": 116.05, "std": 56.01, "min": 80.38, "max": 180.6}, "rmse": {"mean": 10.58, "std": 2.48, "min": 8.97, "max": 13.44}, "r2": {"mean": 0.9649, "std": 0.0193, "min": 0.9429, "max": 0.9787}, "mae": {"mean": 7.34, "std": 1.68, "min": 6.27, "max": 9.27}, "folds": {"fold1": {"mse": 80.4, "rmse": 8.97, "r2": 0.973, "mae": 6.27}, "fold2": {"mse": 180.6, "rmse": 13.44, "r2": 0.943, "mae": 9.27}, "fold3": {"mse": 87.2, "rmse": 9.34, "r2": 0.979, "mae": 6.47}}, "progress": [{"stage": "Stage 1", "rmse": 11.27, "mse": 130.6, "r2": 0.961, "params": {"batch_size": 32, "dilations": "auto", "dropout": 0.2, "filters": 64, "kernel_size": 3, "learning_rate": 0.001, "lookback": 24}}, {"stage": "Stage 2", "rmse": 10.93, "mse": 120.8, "r2": 0.964, "params": {"batch_size": 32, "dilations": "auto+1", "dropout": 0.2, "filters": 128, "kernel_size": 2, "learning_rate": 0.001, "lookback": 24}}, {"stage": "Stage 3", "rmse": 10.58, "mse": 116.0, "r2": 0.965, "params": {"batch_size": 32, "dilations": "auto+1", "dropout": 0.3, "filters": 128, "kernel_size": 2, "learning_rate": 0.001, "lookback": 24}}, {"stage": "Stage 4", "rmse": 10.58, "mse": 116.0, "r2": 0.965, "params": {"batch_size": 32, "dilations": "auto+1", "dropout": 0.3, "filters": 128, "kernel_size": 2, "learning_rate": 0.001, "lookback": 24}}], "lookback": [{"lookback": 24, "rmse": 11.269, "r2": 0.9607, "mse": 130.55}, {"lookback": 48, "rmse": 11.754, "r2": 0.9587, "mse": 138.32}, {"lookback": 72, "rmse": 13.507, "r2": 0.9453, "mse": 186.39}, {"lookback": 168, "rmse": 14.66, "r2": 0.9367, "mse": 225.05}], "seeds": {"17": {"rmse": 10.8, "mse": 118.4, "r2": 0.964}, "42": {"rmse": 10.58, "mse": 116.0, "r2": 0.965}, "73": {"rmse": 11.03, "mse": 125.5, "r2": 0.963}}}, "tcn_lstm": {"params": {"batch_size": 32, "dilations": "auto", "dropout": 0.2, "filters": 64, "kernel_size": 3, "learning_rate": 0.001, "lookback": 48, "lstm_units": 64}, "runs": 111, "sec": 57.0, "mse": {"mean": 123.44, "std": 33.6, "min": 88.62, "max": 155.68}, "rmse": {"mean": 11.04, "std": 1.54, "min": 9.41, "max": 12.48}, "r2": {"mean": 0.9634, "std": 0.011, "min": 0.9508, "max": 0.9703}, "mae": {"mean": 7.82, "std": 0.83, "min": 6.92, "max": 8.56}, "folds": {"fold1": {"mse": 88.6, "rmse": 9.41, "r2": 0.97, "mae": 6.92}, "fold2": {"mse": 155.7, "rmse": 12.48, "r2": 0.951, "mae": 8.56}, "fold3": {"mse": 126.0, "rmse": 11.23, "r2": 0.969, "mae": 7.98}}, "progress": [{"stage": "Stage 1", "rmse": 11.04, "mse": 123.4, "r2": 0.963, "params": {"batch_size": 32, "dilations": "auto", "dropout": 0.2, "filters": 64, "kernel_size": 3, "learning_rate": 0.001, "lookback": 48, "lstm_units": 64}}, {"stage": "Stage 2", "rmse": 11.04, "mse": 123.4, "r2": 0.963, "params": {"batch_size": 32, "dilations": "auto", "dropout": 0.2, "filters": 64, "kernel_size": 3, "learning_rate": 0.001, "lookback": 48, "lstm_units": 64}}, {"stage": "Stage 3", "rmse": 11.04, "mse": 123.4, "r2": 0.963, "params": {"batch_size": 32, "dilations": "auto", "dropout": 0.2, "filters": 64, "kernel_size": 3, "learning_rate": 0.001, "lookback": 48, "lstm_units": 64}}, {"stage": "Stage 4", "rmse": 11.04, "mse": 123.4, "r2": 0.963, "params": {"batch_size": 32, "dilations": "auto", "dropout": 0.2, "filters": 64, "kernel_size": 3, "learning_rate": 0.001, "lookback": 48, "lstm_units": 64}}], "lookback": [{"lookback": 24, "rmse": 12.499, "r2": 0.9516, "mse": 162.69}, {"lookback": 48, "rmse": 11.039, "r2": 0.9634, "mse": 123.44}, {"lookback": 72, "rmse": 15.202, "r2": 0.9315, "mse": 236.22}, {"lookback": 168, "rmse": 17.179, "r2": 0.913, "mse": 310.2}], "seeds": {"17": {"rmse": 13.84, "mse": 193.5, "r2": 0.942}, "42": {"rmse": 11.04, "mse": 123.4, "r2": 0.963}, "73": {"rmse": 13.05, "mse": 175.2, "r2": 0.948}}}}, "weights": {"lstm": 0.432, "tcn": 0.568}};
 const MODELS = [
   { key: "lstm", name: "LSTM", color: "--s1" },
   { key: "tcn", name: "TCN", color: "--s2" },
@@ -332,7 +341,7 @@ function dotRange(id, metric) {
     el("line", { x1: x(d.mean - d.std), x2: x(d.mean + d.std), y1: cy, y2: cy, stroke: css(m.color), "stroke-width": 2, "stroke-linecap": "round", opacity: 0.55 }, svg);
     el("circle", { cx: x(d.mean), cy, r: 6, fill: css(m.color), stroke: css("--surface"), "stroke-width": 2 }, svg);
     const hit = el("rect", { x: left, y: cy - rowH / 2, width: W - left - right, height: rowH, fill: "transparent", class: "hit" }, svg);
-    bindTip(hit, () => `<b>${m.name}</b> · ${METRICS[metric].label}<br>평균 <span class="num">${fmt(d.mean, METRICS[metric].digits)}</span> ± <span class="num">${fmt(d.std, METRICS[metric].digits)}</span><br>9번 중 범위 <span class="num">${fmt(d.min, METRICS[metric].digits)} ~ ${fmt(d.max, METRICS[metric].digits)}</span>`);
+    bindTip(hit, () => `<b>${m.name}</b> · ${METRICS[metric].label}<br>평균 <span class="num">${fmt(d.mean, METRICS[metric].digits)}</span> ± <span class="num">${fmt(d.std, METRICS[metric].digits)}</span><br>fold 3개 범위 <span class="num">${fmt(d.min, METRICS[metric].digits)} ~ ${fmt(d.max, METRICS[metric].digits)}</span>`);
   });
   el("line", { x1: left, x2: W - right, y1: H - bottom, y2: H - bottom, stroke: css("--axis"), "stroke-width": 1 }, svg);
   const host = document.getElementById(id);
@@ -441,9 +450,9 @@ function lookbackChart(metric) {
 
 /* ---------- 단계별 선택 표 ---------- */
 const STAGE_DESC = {
-  lstm: ["lookback", "units · 층 수", "lr · dropout", "batch", "seed 3개 재확인"],
-  tcn: ["lookback", "filters · kernel · dilation", "lr · dropout", "batch", "seed 3개 재확인"],
-  tcn_lstm: ["lookback", "filters · kernel · LSTM units", "lr · dropout", "batch", "seed 3개 재확인"],
+  lstm: ["lookback", "units · 층 수", "lr · dropout", "batch"],
+  tcn: ["lookback", "filters · kernel · dilation", "lr · dropout", "batch"],
+  tcn_lstm: ["lookback", "filters · kernel · LSTM units", "lr · dropout", "batch"],
 };
 function stageTables() {
   const host = document.getElementById("stages");
@@ -462,6 +471,18 @@ function stageTables() {
   }).join("");
 }
 
+
+function seedTable() {
+  const S = [17, 42, 73];
+  let h = `<thead><tr><th>모델</th>${S.map((s) => `<th class="n">seed ${s}${s === 42 ? " (팀 기준)" : ""}</th>`).join("")}<th class="n">최대 − 최소</th></tr></thead><tbody>`;
+  MODELS.forEach((m) => {
+    const sd = DATA.models[m.key].seeds;
+    const v = S.map((s) => sd[s].rmse);
+    h += `<tr><td><span class="swatch" style="background:${css(m.color)}"></span>${m.name}</td>${v.map((x, i) => `<td class="n">${S[i] === 42 ? "<b>" : ""}${fmt(x, 2)}${S[i] === 42 ? "</b>" : ""}</td>`).join("")}<td class="n">${fmt(Math.max(...v) - Math.min(...v), 2)}</td></tr>`;
+  });
+  document.getElementById("seed-table").innerHTML = h + "</tbody>";
+}
+
 /* ---------- 실행 ---------- */
 summaryTable();
 legend("legend-1"); legend("legend-2"); legend("legend-3");
@@ -469,6 +490,7 @@ dotRange("c-mse", "mse"); dotRange("c-rmse", "rmse"); dotRange("c-r2", "r2");
 segmented("seg-fold", ["rmse", "mse", "r2"], "rmse", foldChart); foldChart("rmse"); foldTable();
 segmented("seg-lb", ["rmse", "mse", "r2"], "rmse", lookbackChart); lookbackChart("rmse");
 stageTables();
+seedTable();
 document.getElementById("w-tcn").textContent = DATA.weights.tcn.toFixed(3);
 document.getElementById("w-lstm").textContent = DATA.weights.lstm.toFixed(3);
 window.addEventListener("scroll", hideTip, { passive: true });

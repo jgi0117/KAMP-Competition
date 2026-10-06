@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
 """최종 학습 + Test 평가 + Weighted Ensemble (구현가이드 19~22·26장).
 
-1. 모델별 최종 설정을 그리드 서치 결과(confirm 우선)에서 가져온다.
+1. 모델별 최종 설정을 그리드 서치 결과에서 가져온다.
+   기본(팀 공통 기준)은 seed 42 결과로 고른다. --selection confirm 이면 seed 3개 재확인 결과로 고른다.
 2. Test 이전 데이터로 다시 학습한다 (1/1~8/1 학습, 8/2~8/15 EarlyStopping).
-   seed 17·42·73 으로 3번 학습해 seed 에 따른 변동을 함께 보고한다.
+   기본은 seed 42 로 한 번 학습한다. --seeds 17 42 73 처럼 주면 seed 별로 학습해 평균 ± 표준편차를 보고한다.
 3. Test 구간(8/16~9/14, 셧다운 제외)에서 한 번만 평가한다.
 4. IEEE EECR 2023 방식 Weighted Ensemble:
    가중치 = 1 / (검증 MSE), 합이 1이 되도록 정규화.
-   검증 MSE 는 그리드 서치 fold 검증 결과(seed·fold 평균)를 쓴다. Test 는 가중치 계산에 쓰지 않는다.
+   검증 MSE 는 최종 설정을 고른 기준과 같은 그리드 서치 fold 검증 결과를 쓴다. Test 는 가중치 계산에 쓰지 않는다.
    같은 seed 의 LSTM·TCN 예측끼리 결합한다.
 
 사용 예:
@@ -28,7 +29,6 @@ from src import data_pipeline as dp
 from src.evaluate import evaluate_regression
 
 MODELS = ["lstm", "tcn", "tcn_lstm"]
-SEEDS = gs.CONFIRM_SEEDS
 LABELS = {
     "lstm": "LSTM",
     "tcn": "TCN",
@@ -47,7 +47,12 @@ def main():
     parser.add_argument("--max-epochs", type=int, default=gs.MAX_EPOCHS)
     parser.add_argument("--folds", type=int, default=len(dp.FOLD_VAL_RANGES),
                         help="그리드 서치에 사용한 fold 수 (기본 3)")
+    parser.add_argument("--selection", choices=["seed42", "confirm"], default="seed42",
+                        help="최종 설정 선택 기준 (기본 seed42: 팀 공통 기준)")
+    parser.add_argument("--seeds", type=int, nargs="+", default=[gs.DEFAULT_SEED],
+                        help="최종 학습 seed (기본 42 한 번)")
     args = parser.parse_args()
+    SEEDS = args.seeds
 
     gs.RESULTS_DIR = Path(args.grid_dir)
     out_dir = Path(args.out_dir)
@@ -59,7 +64,7 @@ def main():
     # ---------- 1. 모델별 최종 설정 ----------
     choices = {}
     for name in args.models:
-        params, row, basis = gs.final_choice(name, gs.load_results(name), args.folds)
+        params, row, basis = gs.final_choice(name, gs.load_results(name), args.folds, args.selection)
         if params is None:
             print(f"[{name}] 그리드 서치 결과가 없어 건너뜁니다.")
             continue
@@ -118,7 +123,7 @@ def main():
     per_seed = pd.DataFrame(rows)
 
     order = [m for m in ["lstm", "tcn", "ensemble", "tcn_lstm"] if m in per_seed["model"].unique()]
-    metric_cols = ["rmse", "mae", "r2", "peak_mae", "peak_recall", "peak_f1"]
+    metric_cols = ["mse", "rmse", "r2", "mae", "peak_mae", "peak_recall", "peak_f1"]
     summary = per_seed.groupby("model")[metric_cols].agg(["mean", "std"]).loc[order]
     summary.columns = [f"{m}_{s}" for m, s in summary.columns]
     summary = summary.reset_index()
@@ -145,13 +150,15 @@ def main():
             out_dir / "ensemble_weights.csv", index=False, encoding="utf-8-sig")
 
     # ---------- 출력 ----------
+    seed_note = (f"seed {SEEDS[0]}" if len(SEEDS) == 1
+                 else f"seed {len(SEEDS)}개 평균 ± 표준편차")
     print(f"\n=== Test 결과 (8/16~9/14, 셧다운 제외 {len(actual)}시간, "
-          f"피크 기준 {peak_threshold:.1f} kW, seed {len(SEEDS)}개 평균 ± 표준편차) ===")
+          f"피크 기준 {peak_threshold:.1f} kW, {seed_note}) ===")
     table = pd.DataFrame({"Model": summary["label"]})
-    for col, title in [("rmse", "RMSE"), ("mae", "MAE"), ("r2", "R²"), ("peak_mae", "Peak MAE"),
-                       ("peak_recall", "Peak Recall"), ("peak_f1", "Peak F1")]:
+    for col, title in [("mse", "MSE"), ("rmse", "RMSE"), ("r2", "R²"), ("mae", "MAE"),
+                       ("peak_mae", "Peak MAE"), ("peak_recall", "Peak Recall"), ("peak_f1", "Peak F1")]:
         digits = 3 if col in ("r2", "peak_recall", "peak_f1") else 2
-        table[title] = [f"{m:.{digits}f} ± {s:.{digits}f}"
+        table[title] = [f"{m:.{digits}f}" if len(SEEDS) == 1 else f"{m:.{digits}f} ± {s:.{digits}f}"
                         for m, s in zip(summary[f"{col}_mean"], summary[f"{col}_std"])]
     with pd.option_context("display.width", 200):
         print(table.to_string(index=False))
