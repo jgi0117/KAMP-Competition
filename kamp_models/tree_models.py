@@ -10,6 +10,7 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import ParameterGrid
+from tqdm.auto import tqdm
 
 from .data import DatasetBundle, flatten_features
 from .metrics import regression_metrics
@@ -60,38 +61,51 @@ def run_tree_search(
     rows: list[dict[str, Any]] = []
     search_started = time.perf_counter()
 
-    for candidate_index, params in enumerate(ParameterGrid(param_grid), start=1):
-        fold_metrics: list[dict[str, float]] = []
-        fold_started = time.perf_counter()
-        for fold_number, split in enumerate(folds, start=1):
-            estimator = estimator_factory(params, seed, n_jobs, device)
-            estimator.fit(X_search[split.train], y_search[split.train])
-            prediction = estimator.predict(X_search[split.evaluate])
-            metrics = regression_metrics(y_search[split.evaluate], prediction)
-            fold_metrics.append(metrics)
+    candidates = list(ParameterGrid(param_grid))
+    with tqdm(
+        total=len(candidates) * len(folds),
+        desc=f"{model_name} grid search [{device}]",
+        unit="fold",
+        dynamic_ncols=True,
+    ) as progress:
+        for candidate_index, params in enumerate(candidates, start=1):
+            fold_metrics: list[dict[str, float]] = []
+            fold_started = time.perf_counter()
+            for fold_number, split in enumerate(folds, start=1):
+                estimator = estimator_factory(params, seed, n_jobs, device)
+                estimator.fit(X_search[split.train], y_search[split.train])
+                prediction = estimator.predict(X_search[split.evaluate])
+                metrics = regression_metrics(y_search[split.evaluate], prediction)
+                fold_metrics.append(metrics)
+                rows.append(
+                    {
+                        "candidate": candidate_index,
+                        "fold": split.name or fold_number,
+                        "n_train": len(split.train),
+                        "n_early_stop": len(split.early_stop),
+                        "n_eval": len(split.evaluate),
+                        "params": json.dumps(params, ensure_ascii=False, sort_keys=True),
+                        **metrics,
+                    }
+                )
+                progress.set_postfix(
+                    candidate=f"{candidate_index}/{len(candidates)}",
+                    fold=split.name or fold_number,
+                    rmse=f"{metrics['rmse']:.3f}",
+                )
+                progress.update(1)
+
             rows.append(
                 {
                     "candidate": candidate_index,
-                    "fold": split.name or fold_number,
-                    "n_train": len(split.train),
-                    "n_early_stop": len(split.early_stop),
-                    "n_eval": len(split.evaluate),
+                    "fold": "mean",
                     "params": json.dumps(params, ensure_ascii=False, sort_keys=True),
-                    **metrics,
+                    "rmse": float(np.mean([item["rmse"] for item in fold_metrics])),
+                    "mae": float(np.mean([item["mae"] for item in fold_metrics])),
+                    "r2": float(np.mean([item["r2"] for item in fold_metrics])),
+                    "elapsed_seconds": time.perf_counter() - fold_started,
                 }
             )
-
-        rows.append(
-            {
-                "candidate": candidate_index,
-                "fold": "mean",
-                "params": json.dumps(params, ensure_ascii=False, sort_keys=True),
-                "rmse": float(np.mean([item["rmse"] for item in fold_metrics])),
-                "mae": float(np.mean([item["mae"] for item in fold_metrics])),
-                "r2": float(np.mean([item["r2"] for item in fold_metrics])),
-                "elapsed_seconds": time.perf_counter() - fold_started,
-            }
-        )
 
     results = pd.DataFrame(rows)
     mean_rows = results[results["fold"] == "mean"].copy()

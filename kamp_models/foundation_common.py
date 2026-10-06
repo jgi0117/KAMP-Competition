@@ -17,6 +17,7 @@ from .finetuning import (
     train_torch_point_model,
 )
 from .metrics import regression_metrics
+from .progress import log_progress
 from .splitting import TemporalFold, get_temporal_folds
 
 
@@ -92,14 +93,27 @@ def predict_torch(
     device: str,
     batch_size: int,
     forward_fn: Callable[[Any, Any, bool], Any],
+    progress_description: str | None = None,
 ) -> tuple[np.ndarray, float]:
     import torch
 
     model.eval()
     predictions = []
     started = time.perf_counter()
+    starts: Any = range(0, len(contexts), batch_size)
+    if progress_description:
+        from tqdm.auto import tqdm
+
+        starts = tqdm(
+            starts,
+            total=(len(contexts) + batch_size - 1) // batch_size,
+            desc=progress_description,
+            unit="batch",
+            dynamic_ncols=True,
+            leave=False,
+        )
     with torch.no_grad():
-        for start in range(0, len(contexts), batch_size):
+        for start in starts:
             batch = torch.as_tensor(
                 contexts[start : start + batch_size],
                 dtype=torch.float32,
@@ -152,22 +166,38 @@ def run_torch_foundation_search(
     history, targets, folds = expanding_folds(data, settings.cv_splits)
     _, _, test_history = histories(data)
 
+    log_progress(f"{model_name} | loading zero-shot checkpoint {checkpoint}")
     load_started = time.perf_counter()
     zero_model = loader()
     load_seconds = time.perf_counter() - load_started
+    log_progress(
+        f"{model_name} | checkpoint loaded in {load_seconds:.1f}s; zero-shot inference started"
+    )
     zero_predictions, zero_inference = predict_torch(
         zero_model,
         test_history,
         device=device,
         batch_size=inference_batch_size,
         forward_fn=forward_fn,
+        progress_description=f"{model_name} zero-shot inference",
     )
     del zero_model
 
     records: list[dict[str, Any]] = []
+    trial_total = len(settings.scopes) * len(settings.learning_rates) * len(folds)
+    trial_number = 0
     for scope in settings.scopes:
         for learning_rate in settings.learning_rates:
             for fold_number, fold in enumerate(folds, start=1):
+                trial_number += 1
+                trial_name = (
+                    f"{model_name} {scope} lr={learning_rate:g} "
+                    f"{fold.name or fold_number}"
+                )
+                log_progress(
+                    f"{model_name} fine-tuning trial {trial_number}/{trial_total} | "
+                    f"{scope} | lr={learning_rate:g} | {fold.name or fold_number}"
+                )
                 seed_everything(settings.search_seed)
                 model = loader()
                 counts = apply_finetune_scope(model_name, model, scope)
@@ -186,6 +216,7 @@ def run_torch_foundation_search(
                     early_stopping_patience=settings.early_stopping_patience,
                     seed=settings.search_seed,
                     forward_fn=forward_fn,
+                    progress_description=trial_name,
                 )
                 val_prediction, inference_seconds = predict_torch(
                     model,
@@ -193,6 +224,7 @@ def run_torch_foundation_search(
                     device=device,
                     batch_size=inference_batch_size,
                     forward_fn=forward_fn,
+                    progress_description=f"{trial_name} evaluation",
                 )
                 records.append(
                     {
@@ -216,6 +248,10 @@ def run_torch_foundation_search(
                     index=False,
                     encoding="utf-8-sig",
                 )
+                log_progress(
+                    f"{model_name} trial {trial_number}/{trial_total} completed | "
+                    f"best_step={trained.best_step} | RMSE={records[-1]['rmse']:.4f}"
+                )
                 del model
                 try:
                     import torch
@@ -231,6 +267,10 @@ def run_torch_foundation_search(
     seed_everything(seed)
     model = loader()
     final_counts = apply_finetune_scope(model_name, model, best_scope)
+    log_progress(
+        f"{model_name} final training | scope={best_scope} | lr={best_lr:g} | "
+        f"steps={best_steps} | device={device}"
+    )
     trained = train_torch_point_model(
         model,
         history,
@@ -246,6 +286,7 @@ def run_torch_foundation_search(
         early_stopping_patience=settings.early_stopping_patience,
         seed=seed,
         forward_fn=forward_fn,
+        progress_description=f"{model_name} final {best_scope}",
     )
     final_prediction, final_inference_seconds = predict_torch(
         model,
@@ -253,6 +294,7 @@ def run_torch_foundation_search(
         device=device,
         batch_size=inference_batch_size,
         forward_fn=forward_fn,
+        progress_description=f"{model_name} final test inference",
     )
     save_trainable_checkpoint(
         model,

@@ -207,6 +207,7 @@ def train_torch_point_model(
     early_stopping_patience: int,
     seed: int,
     forward_fn: Callable[[Any, Any, bool], Any],
+    progress_description: str | None = None,
 ) -> TorchTrainResult:
     """Fine-tune a point forecaster with optimizer-step based early stopping."""
 
@@ -258,41 +259,67 @@ def train_torch_point_model(
     validations_without_improvement = 0
     started = time.perf_counter()
     optimizer.zero_grad(set_to_none=True)
+    progress = None
+    if progress_description:
+        from tqdm.auto import tqdm
 
-    for step in range(1, max_steps + 1):
-        model.train()
-        for _ in range(gradient_accumulation_steps):
-            selected = next_indices()
-            x_batch = torch.as_tensor(
-                train_context[selected], dtype=torch.float32, device=device
-            )
-            y_batch = torch.as_tensor(train_y[selected], dtype=torch.float32, device=device)
-            with torch.autocast(
-                device_type="cuda", dtype=torch.float16, enabled=use_amp
-            ):
-                prediction = forward_fn(model, x_batch, True)
-                loss = torch.nn.functional.mse_loss(prediction, y_batch)
-                loss = loss / gradient_accumulation_steps
-            scaler.scale(loss).backward()
-
-        scaler.step(optimizer)
-        scaler.update()
-        optimizer.zero_grad(set_to_none=True)
-
-        should_validate = val_context is not None and (
-            step % validation_interval == 0 or step == max_steps
+        progress = tqdm(
+            total=max_steps,
+            desc=progress_description,
+            unit="step",
+            dynamic_ncols=True,
+            leave=False,
         )
-        if should_validate:
-            rmse = evaluate()
-            if rmse < best_rmse:
-                best_rmse = rmse
-                best_step = step
-                best_state = _trainable_state(model)
-                validations_without_improvement = 0
-            else:
-                validations_without_improvement += 1
-                if validations_without_improvement >= early_stopping_patience:
-                    break
+
+    try:
+        for step in range(1, max_steps + 1):
+            model.train()
+            for _ in range(gradient_accumulation_steps):
+                selected = next_indices()
+                x_batch = torch.as_tensor(
+                    train_context[selected], dtype=torch.float32, device=device
+                )
+                y_batch = torch.as_tensor(
+                    train_y[selected], dtype=torch.float32, device=device
+                )
+                with torch.autocast(
+                    device_type="cuda", dtype=torch.float16, enabled=use_amp
+                ):
+                    prediction = forward_fn(model, x_batch, True)
+                    loss = torch.nn.functional.mse_loss(prediction, y_batch)
+                    loss = loss / gradient_accumulation_steps
+                scaler.scale(loss).backward()
+
+            scaler.step(optimizer)
+            scaler.update()
+            optimizer.zero_grad(set_to_none=True)
+
+            stop_early = False
+            should_validate = val_context is not None and (
+                step % validation_interval == 0 or step == max_steps
+            )
+            if should_validate:
+                rmse = evaluate()
+                if progress is not None:
+                    progress.set_postfix(val_rmse=f"{rmse:.4f}")
+                if rmse < best_rmse:
+                    best_rmse = rmse
+                    best_step = step
+                    best_state = _trainable_state(model)
+                    validations_without_improvement = 0
+                else:
+                    validations_without_improvement += 1
+                    stop_early = (
+                        validations_without_improvement
+                        >= early_stopping_patience
+                    )
+            if progress is not None:
+                progress.update(1)
+            if stop_early:
+                break
+    finally:
+        if progress is not None:
+            progress.close()
 
     if best_state is not None:
         _restore_trainable_state(model, best_state)

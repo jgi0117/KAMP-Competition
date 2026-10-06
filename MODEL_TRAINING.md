@@ -86,3 +86,7 @@ python run_models.py --data outputs/prepared/model_input_lhs.npz `
 - `run_metadata.json`: 실행 환경, 데이터 크기, 장치, fine-tuning 조건
 
 GPU를 사용할 수 있으면 자동으로 사용하고, 해당 라이브러리의 GPU 빌드나 장치가 없으면 그 모델만 CPU로 실행합니다.
+
+## 터미널 진행 상태
+
+실행을 시작하면 선택된 장치, CUDA 연결 여부, GPU 이름, CUDA runtime과 VRAM이 먼저 출력됩니다. 학습 중에는 현재 모델 번호, tree grid의 후보·fold 진행률, foundation 모델의 F0~F7·학습률·fold 번호, optimizer step, 검증 RMSE와 경과 시간이 표시됩니다. 각 모델이 끝날 때 실제 사용 장치와 최종 RMSE도 출력됩니다.

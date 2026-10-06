@@ -17,6 +17,7 @@ dependencies:
   - python-docx
   - scikit-learn
   - joblib
+  - tqdm
   - pip
   - pip:
       # XGBoost 3.4 Windows wheels require a newer CUDA driver than this laptop.

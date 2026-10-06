@@ -22,6 +22,7 @@ from .models import (
     run_xgboost,
 )
 from .metrics import regression_metrics
+from .progress import log_progress, torch_device_summary
 
 
 SUPPORTED_MODELS = ("xgboost", "lightgbm", "timesfm3", "chronos2", "moirai2")
@@ -107,8 +108,23 @@ def run_experiment(
     continue_on_error = bool(experiment.get("continue_on_error", True))
     rows: list[dict[str, Any]] = []
 
-    for model_name in selected_models:
+    log_progress(
+        "Run started | "
+        f"models={', '.join(selected_models)} | "
+        f"train/val/test={data.train.n_samples}/{data.val.n_samples}/{data.test.n_samples} | "
+        f"context={data.context_length} | horizon={data.horizon}"
+    )
+    log_progress(f"Foundation device | {torch_device_summary(device)}")
+    log_progress(
+        f"Tree device requested={tree_device}; each tree model will report its actual device"
+    )
+
+    for model_number, model_name in enumerate(selected_models, start=1):
         row = _base_row(model_name)
+        model_started = time.perf_counter()
+        log_progress(
+            f"Model {model_number}/{len(selected_models)} started | {model_name}"
+        )
         try:
             if model_name in {"xgboost", "lightgbm"}:
                 tree_runner = run_xgboost if model_name == "xgboost" else run_lightgbm
@@ -198,6 +214,10 @@ def run_experiment(
                         variant.predictions,
                     )
                     rows.append(variant_row)
+                log_progress(
+                    f"Model {model_name} completed | device={device} | "
+                    f"elapsed={time.perf_counter() - model_started:.1f}s"
+                )
                 continue
 
             metrics = regression_metrics(data.test.y, predictions)
@@ -209,12 +229,21 @@ def run_experiment(
             )
         except Exception as exc:
             row["error"] = f"{type(exc).__name__}: {exc}"
+            log_progress(
+                f"Model {model_name} failed | elapsed={time.perf_counter() - model_started:.1f}s | "
+                f"{row['error']}"
+            )
             if not continue_on_error:
                 rows.append(row)
                 pd.DataFrame(rows).to_csv(
                     destination / "comparison.csv", index=False, encoding="utf-8-sig"
                 )
                 raise
+        else:
+            log_progress(
+                f"Model {model_name} completed | device={row['device']} | "
+                f"RMSE={row['rmse']:.4f} | elapsed={time.perf_counter() - model_started:.1f}s"
+            )
         rows.append(row)
 
     comparison = pd.DataFrame(rows)
@@ -260,4 +289,5 @@ def run_experiment(
     (destination / "run_metadata.json").write_text(
         json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    log_progress(f"Run completed | comparison={destination / 'comparison.csv'}")
     return comparison
