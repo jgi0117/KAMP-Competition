@@ -19,7 +19,8 @@ dependencies:
   - joblib
   - pip
   - pip:
-      - xgboost>=2.0
+      # XGBoost 3.4 Windows wheels require a newer CUDA driver than this laptop.
+      - xgboost==2.0.3
       - lightgbm
       - transformers<5
       - chronos-forecasting
