@@ -1,18 +1,23 @@
 # -*- coding: utf-8 -*-
-"""최종 학습 + Test 평가 + Weighted Ensemble (구현가이드 19~22·26장).
+"""최종 학습 + Test 평가 + Weighted Ensemble + 이상(피크) 확률 (팀 공통 평가 기준).
 
-1. 모델별 최종 설정을 그리드 서치 결과에서 가져온다.
-   기본(팀 공통 기준)은 seed 42 결과로 고른다. --selection confirm 이면 seed 3개 재확인 결과로 고른다.
-2. Test 이전 데이터로 다시 학습한다 (1/1~8/1 학습, 8/2~8/15 EarlyStopping).
-   기본은 seed 42 로 한 번 학습한다. --seeds 17 42 73 처럼 주면 seed 별로 학습해 평균 ± 표준편차를 보고한다.
-3. Test 구간(8/16~9/14, 셧다운 제외)에서 한 번만 평가한다.
-4. IEEE EECR 2023 방식 Weighted Ensemble:
-   가중치 = 1 / (검증 MSE), 합이 1이 되도록 정규화.
-   검증 MSE 는 최종 설정을 고른 기준과 같은 그리드 서치 fold 검증 결과를 쓴다. Test 는 가중치 계산에 쓰지 않는다.
-   같은 seed 의 LSTM·TCN 예측끼리 결합한다.
+팀 공통 기준 (docs/modeling/팀_공통_평가기준.md):
+- 제조 이상 = 다음 1시간 평균 전력이 177 kW 이상 (전력 피크). 셧다운(0 kW)은 평가에서 제외.
+- 이상 확률 = 1 − Φ((177 − 예측값) / σ), σ 는 검증 구간 예측 오차의 표준편차.
+- 경보 = 이상 확률 ≥ 경보 기준. 경보 기준은 검증 구간 F1 이 가장 높은 확률 (0.05 단위).
+- Test 8/16~9/14 (셧다운 17시간 제외), seed 42, 검증 fold 3개.
+
+순서
+1. 모델별 최종 설정을 그리드 서치 결과에서 가져온다 (기본: seed 42 결과로 선택).
+2. 검증 예측: 같은 설정으로 fold 3개를 각각 학습해 검증 구간을 예측한다 → σ, 경보 기준, 앙상블 가중치.
+3. Test 예측: Test 이전 데이터로 다시 학습한다 (1/1~8/1 학습, 8/2~8/15 EarlyStopping).
+4. Weighted Ensemble (IEEE EECR 2023): 가중치 = 1 / 검증 MSE. 같은 seed 의 LSTM·TCN 예측을 결합한다.
+5. 베이스라인 (학습 없음): 직전 시간 전력 그대로(lag1), 지난주 같은 시간 전력(lag168).
+6. 모든 모델을 같은 Test 시점에서 회귀 지표(MSE·RMSE·R²·MAE)와 이상 탐지 지표(F1·Recall·Precision·Brier·PR-AUC)로 평가한다.
 
 사용 예:
     python final_evaluate.py --data <csv> --grid-dir results/grid_search --out-dir results/final
+    python final_evaluate.py --space v2 --data <okm_features2_2021.csv> --grid-dir results/grid_search_v2 --out-dir results/final_v2
 """
 
 import argparse
@@ -26,15 +31,32 @@ import pandas as pd
 
 import grid_search as gs
 from src import data_pipeline as dp
-from src.evaluate import evaluate_regression
+from src.evaluate import (
+    choose_alert_cutoff,
+    evaluate_alerts,
+    evaluate_regression,
+    peak_probability,
+)
 
 MODELS = ["lstm", "tcn", "tcn_lstm"]
+BASELINES = {"naive_lag1": 1, "naive_lag168": 168}
+ORDER = ["naive_lag1", "naive_lag168", "lstm", "tcn", "ensemble", "tcn_lstm"]
 LABELS = {
+    "naive_lag1": "베이스라인: 직전 시간 그대로",
+    "naive_lag168": "베이스라인: 지난주 같은 시간",
     "lstm": "LSTM",
     "tcn": "TCN",
     "ensemble": "Weighted Ensemble (LSTM+TCN)",
     "tcn_lstm": "TCN-LSTM",
 }
+
+
+def predict_split(name, params, seed, df, split, max_epochs):
+    """한 Split 에서 학습하고 평가 구간을 예측한다. (모델, 예측 kW, 실제 kW, Target 행 번호, 학습 정보)"""
+    data = dp.prepare_split(df, split, params["lookback"], params.get("feature_set", "base"))
+    model, info = gs.train_model(name, params, seed, data, max_epochs)
+    pred, actual = gs.predict_kw(model, data)
+    return model, pred, actual, data["idx_eval"], info
 
 
 def main():
@@ -46,15 +68,16 @@ def main():
     parser.add_argument("--models", nargs="+", default=MODELS, choices=MODELS)
     parser.add_argument("--max-epochs", type=int, default=gs.MAX_EPOCHS)
     parser.add_argument("--folds", type=int, default=len(dp.FOLD_VAL_RANGES),
-                        help="그리드 서치에 사용한 fold 수 (기본 3)")
+                        help="검증 fold 수 (기본 3)")
     parser.add_argument("--space", choices=list(gs.SPACES), default="v1",
                         help="그리드 서치 탐색 계획 (v1: 1차, v2: 2차 피처 실험). --grid-dir 와 맞춰야 한다")
     parser.add_argument("--selection", choices=["seed42", "confirm"], default="seed42",
                         help="최종 설정 선택 기준 (기본 seed42: 팀 공통 기준)")
     parser.add_argument("--seeds", type=int, nargs="+", default=[gs.DEFAULT_SEED],
-                        help="최종 학습 seed (기본 42 한 번)")
+                        help="학습 seed (기본 42 한 번)")
     args = parser.parse_args()
-    SEEDS = args.seeds
+    seeds = args.seeds
+    thr = dp.PEAK_THRESHOLD_KW
 
     gs.use_space(args.space)
     gs.RESULTS_DIR = Path(args.grid_dir)
@@ -62,7 +85,9 @@ def main():
     (out_dir / "models").mkdir(parents=True, exist_ok=True)
 
     df = dp.load_data(args.data)
-    split = dp.get_final_split(df)
+    folds = dp.get_folds(df)[:args.folds]
+    final_split = dp.get_final_split(df)
+    power = df[dp.TARGET_COLUMN]
 
     # ---------- 1. 모델별 최종 설정 ----------
     choices = {}
@@ -71,101 +96,124 @@ def main():
         if params is None:
             print(f"[{name}] 그리드 서치 결과가 없어 건너뜁니다.")
             continue
-        choices[name] = {"params": params, "val_mse": row["mse"], "val_rmse": row["rmse"],
-                         "basis": basis}
+        choices[name] = params
         print(f"[{name}] 최종 설정 ({basis}): {gs.config_id(params)}")
-        print(f"        검증 RMSE {row['rmse']:.3f} kW (fold 평균)")
-
     if not choices:
         raise SystemExit("평가할 모델이 없습니다. 그리드 서치를 먼저 실행하세요.")
 
-    # ---------- 2~3. 최종 학습 + Test 예측 ----------
-    preds = {}          # (모델, seed) → kW 예측
-    actual = idx_eval = None
-    peak_threshold = None
+    # ---------- 2~3. 검증 예측 + Test 예측 ----------
+    val, test = {}, {}          # (이름, seed) → 예측 kW
+    val_idx = val_fold = test_idx = None
     train_log = []
+    for name, params in choices.items():
+        for seed in seeds:
+            parts, idxs, fold_names = [], [], []
+            for split in folds:
+                _, pred, _, idx, info = predict_split(name, params, seed, df, split, args.max_epochs)
+                parts.append(pred); idxs.append(idx); fold_names += [split.name] * len(idx)
+                train_log.append({"model": name, "seed": seed, "split": split.name, **info})
+            idx = np.concatenate(idxs)
+            if val_idx is None:
+                val_idx, val_fold = idx, np.array(fold_names)
+            assert np.array_equal(idx, val_idx), "모델 간 검증 시점이 다릅니다."
+            val[(name, seed)] = np.concatenate(parts)
 
-    for name, choice in choices.items():
-        params = choice["params"]
-        data = dp.prepare_split(df, split, params["lookback"], params.get("feature_set", "base"))
-        if actual is None:
-            actual = data["y_scaler"].inverse_transform(data["y_eval"]).ravel()
-            idx_eval = data["idx_eval"]
-            peak_threshold = data["peak_threshold"]
-        # lookback 이 달라도 Test Target 시점은 같아야 비교가 공정하다
-        assert np.array_equal(idx_eval, data["idx_eval"]), "모델 간 Test 시점이 다릅니다."
-
-        for seed in SEEDS:
-            model, info = gs.train_model(name, params, seed, data, args.max_epochs)
-            pred, _ = gs.predict_kw(model, data)
-            preds[(name, seed)] = pred
+            model, pred, _, idx, info = predict_split(name, params, seed, df, final_split, args.max_epochs)
+            if test_idx is None:
+                test_idx = idx
+            assert np.array_equal(idx, test_idx), "모델 간 Test 시점이 다릅니다."
+            test[(name, seed)] = pred
             model.save(out_dir / "models" / f"{name}_seed{seed}.keras")
-            train_log.append({"model": name, "seed": seed, **info})
-            print(f"  [{name}] seed={seed} 학습 완료 (best epoch {info['best_epoch']}, "
-                  f"{info['train_seconds']}s)")
+            train_log.append({"model": name, "seed": seed, "split": "final", **info})
+            print(f"  [{name}] seed={seed} 검증 fold {len(folds)}개 + Test 학습 완료")
+
+    y_val = power.to_numpy()[val_idx]
+    y_test = power.to_numpy()[test_idx]
 
     # ---------- 4. Weighted Ensemble ----------
-    weights = None
+    weights = {}
     if "lstm" in choices and "tcn" in choices:
-        inv = {m: 1.0 / choices[m]["val_mse"] for m in ("lstm", "tcn")}
-        total = sum(inv.values())
-        weights = {m: inv[m] / total for m in inv}
-        print(f"\nWeighted Ensemble 가중치 (1/검증 MSE): "
-              f"LSTM {weights['lstm']:.3f}, TCN {weights['tcn']:.3f}")
-        for seed in SEEDS:
-            preds[("ensemble", seed)] = (weights["lstm"] * preds[("lstm", seed)]
-                                         + weights["tcn"] * preds[("tcn", seed)])
+        for seed in seeds:
+            inv = {m: 1.0 / np.mean((y_val - val[(m, seed)]) ** 2) for m in ("lstm", "tcn")}
+            w = {m: v / sum(inv.values()) for m, v in inv.items()}
+            weights[seed] = w
+            for store in (val, test):
+                store[("ensemble", seed)] = w["lstm"] * store[("lstm", seed)] + w["tcn"] * store[("tcn", seed)]
+        w0 = weights[seeds[0]]
+        print(f"\nWeighted Ensemble 가중치 (1/검증 MSE, seed {seeds[0]}): "
+              f"LSTM {w0['lstm']:.3f}, TCN {w0['tcn']:.3f}")
     else:
         print("\nLSTM 과 TCN 이 모두 있어야 Weighted Ensemble 을 만들 수 있어 건너뜁니다.")
 
-    # ---------- 평가 ----------
-    rows = []
-    for (name, seed), pred in preds.items():
-        rows.append({"model": name, "seed": seed,
-                     **evaluate_regression(actual, pred, peak_threshold)})
-    per_seed = pd.DataFrame(rows)
+    # ---------- 5. 베이스라인 (seed 와 무관하지만 표 형식을 맞추려고 seed 마다 넣는다) ----------
+    for name, lag in BASELINES.items():
+        shifted = power.shift(lag).to_numpy()
+        for seed in seeds:
+            val[(name, seed)] = shifted[val_idx]
+            test[(name, seed)] = shifted[test_idx]
 
-    order = [m for m in ["lstm", "tcn", "ensemble", "tcn_lstm"] if m in per_seed["model"].unique()]
-    metric_cols = ["mse", "rmse", "r2", "mae", "peak_mae", "peak_recall", "peak_f1"]
-    summary = per_seed.groupby("model")[metric_cols].agg(["mean", "std"]).loc[order]
+    # ---------- 6. 평가 ----------
+    rows, settings = [], []
+    probs = {}
+    for (name, seed), pv in val.items():
+        resid = y_val - pv
+        sigma = float(np.std(resid, ddof=1))
+        cutoff = choose_alert_cutoff(y_val, peak_probability(pv, sigma, thr), thr)
+        pt = peak_probability(test[(name, seed)], sigma, thr)
+        probs[(name, seed)] = pt
+        val_reg = evaluate_regression(y_val, pv, thr)
+        settings.append({"model": name, "seed": seed, "sigma": sigma, "alert_cutoff": cutoff,
+                         "val_rmse": val_reg["rmse"], "val_mse": val_reg["mse"], "val_r2": val_reg["r2"],
+                         "val_alert_f1": evaluate_alerts(y_val, peak_probability(pv, sigma, thr), thr, cutoff)["alert_f1"]})
+        rows.append({"model": name, "seed": seed,
+                     **evaluate_regression(y_test, test[(name, seed)], thr),
+                     **evaluate_alerts(y_test, pt, thr, cutoff)})
+    per_seed = pd.DataFrame(rows)
+    order = [m for m in ORDER if m in per_seed["model"].unique()]
+    cols = ["mse", "rmse", "r2", "mae", "alert_f1", "alert_recall", "alert_precision", "brier", "pr_auc",
+            "tp", "fn", "fp", "alert_cutoff"]
+    summary = per_seed.groupby("model")[cols].agg(["mean", "std"]).loc[order]
     summary.columns = [f"{m}_{s}" for m, s in summary.columns]
     summary = summary.reset_index()
     summary.insert(1, "label", summary["model"].map(LABELS))
     summary.insert(2, "config", summary["model"].map(
-        lambda m: gs.config_id(choices[m]["params"]) if m in choices
-        else f"LSTM {weights['lstm']:.3f} + TCN {weights['tcn']:.3f}"))
+        lambda m: gs.config_id(choices[m]) if m in choices
+        else ("LSTM·TCN 가중 평균" if m == "ensemble" else f"lag {BASELINES[m]}")))
 
     # ---------- 저장 ----------
-    pred_df = pd.DataFrame({"datetime": df["datetime"].iloc[idx_eval].to_numpy(),
-                            "actual": actual})
-    for (name, seed), pred in preds.items():
-        pred_df[f"{name}_seed{seed}"] = pred
-    for name in order:
-        pred_df[f"{name}_mean"] = pred_df[[f"{name}_seed{s}" for s in SEEDS]].mean(axis=1)
-
-    pred_df.to_csv(out_dir / "test_predictions.csv", index=False, encoding="utf-8-sig")
+    dt = df["datetime"].to_numpy()
+    val_df = pd.DataFrame({"datetime": dt[val_idx], "fold": val_fold, "actual": y_val})
+    test_df = pd.DataFrame({"datetime": dt[test_idx], "actual": y_test, "is_peak": y_test >= thr})
+    for (name, seed), pv in val.items():
+        val_df[f"pred_{name}_seed{seed}"] = pv
+    for (name, seed), pt in test.items():
+        test_df[f"pred_{name}_seed{seed}"] = pt
+        test_df[f"prob_{name}_seed{seed}"] = probs[(name, seed)]
+    val_df.to_csv(out_dir / "val_predictions.csv", index=False, encoding="utf-8-sig")
+    test_df.to_csv(out_dir / "test_predictions.csv", index=False, encoding="utf-8-sig")
     per_seed.to_csv(out_dir / "test_metrics_per_seed.csv", index=False, encoding="utf-8-sig")
     summary.to_csv(out_dir / "test_summary.csv", index=False, encoding="utf-8-sig")
+    pd.DataFrame(settings).to_csv(out_dir / "alert_settings.csv", index=False, encoding="utf-8-sig")
     pd.DataFrame(train_log).to_csv(out_dir / "train_log.csv", index=False, encoding="utf-8-sig")
     if weights:
-        pd.DataFrame([{"model": m, "val_mse": choices[m]["val_mse"], "weight": w}
-                      for m, w in weights.items()]).to_csv(
-            out_dir / "ensemble_weights.csv", index=False, encoding="utf-8-sig")
+        pd.DataFrame([{"seed": s, "model": m, "weight": v} for s, w in weights.items() for m, v in w.items()]
+                     ).to_csv(out_dir / "ensemble_weights.csv", index=False, encoding="utf-8-sig")
 
     # ---------- 출력 ----------
-    seed_note = (f"seed {SEEDS[0]}" if len(SEEDS) == 1
-                 else f"seed {len(SEEDS)}개 평균 ± 표준편차")
-    print(f"\n=== Test 결과 (8/16~9/14, 셧다운 제외 {len(actual)}시간, "
-          f"피크 기준 {peak_threshold:.1f} kW, {seed_note}) ===")
+    one = len(seeds) == 1
+    print(f"\n=== Test 결과 (8/16~9/14, 셧다운 제외 {len(y_test)}시간, 이상 기준 {thr:.0f} kW, "
+          f"이상 {int((y_test >= thr).sum())}시간, {'seed ' + str(seeds[0]) if one else f'seed {len(seeds)}개 평균'}) ===")
     table = pd.DataFrame({"Model": summary["label"]})
-    for col, title in [("mse", "MSE"), ("rmse", "RMSE"), ("r2", "R²"), ("mae", "MAE"),
-                       ("peak_mae", "Peak MAE"), ("peak_recall", "Peak Recall"), ("peak_f1", "Peak F1")]:
-        digits = 3 if col in ("r2", "peak_recall", "peak_f1") else 2
-        table[title] = [f"{m:.{digits}f}" if len(SEEDS) == 1 else f"{m:.{digits}f} ± {s:.{digits}f}"
+    for col, title, d in [("mse", "MSE", 1), ("rmse", "RMSE", 2), ("r2", "R²", 3), ("mae", "MAE", 2),
+                          ("alert_f1", "F1", 3), ("alert_recall", "Recall", 3), ("alert_precision", "Precision", 3),
+                          ("brier", "Brier", 4), ("pr_auc", "PR-AUC", 3), ("fn", "FN", 0), ("fp", "FP", 0),
+                          ("alert_cutoff", "경보기준", 2)]:
+        table[title] = [f"{m:.{d}f}" if one else f"{m:.{d}f}±{s:.{d}f}"
                         for m, s in zip(summary[f"{col}_mean"], summary[f"{col}_std"])]
-    with pd.option_context("display.width", 200):
+    with pd.option_context("display.width", 250):
         print(table.to_string(index=False))
-    print(f"\n저장 위치: {out_dir}")
+    print("\nF1·Recall·Precision·FN·FP: 이상 확률 ≥ 경보기준이면 경보. 경보기준은 검증 구간 F1 최대값.")
+    print(f"저장 위치: {out_dir}")
 
 
 if __name__ == "__main__":

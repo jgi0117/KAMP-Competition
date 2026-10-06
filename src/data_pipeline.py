@@ -90,7 +90,10 @@ FOLD_VAL_RANGES = [
 # 모델 선택용 검증 구간을 EarlyStopping 에 다시 쓰지 않기 위함이다.
 EARLY_STOP_DAYS = 14
 
-# 피크 기준: 각 fold 학습 구간 전력의 상위 5% 값 (Test 를 보기 전에 정해짐)
+# 제조 이상(전력 피크) 기준: 팀 공통 고정값 177 kW.
+# = Test 이전 전체 기간(1/1~8/15, 셧다운 제외) 전력의 상위 5% (peak_threshold_from_data() 로 재현).
+# 모든 모델·모든 구간에 같은 값을 쓴다. Test 구간 피크 49시간(29건, 15일).
+PEAK_THRESHOLD_KW = 177.0
 PEAK_QUANTILE = 0.95
 
 # 8/28~8/29 셧다운(전력 0 kW) 같은 비정상 구간을 Target 으로 학습·평가하지 않는다.
@@ -178,6 +181,12 @@ def get_folds(df):
             eval=((dt >= val_start) & (dt <= val_end)).to_numpy(),
         ))
     return folds
+
+
+def peak_threshold_from_data(df):
+    """PEAK_THRESHOLD_KW(177 kW)의 근거: Test 이전 전체 기간(셧다운 제외) 전력의 상위 5%."""
+    mask = (df["datetime"] < TEST_START) & ~df["공장_셧다운_여부"]
+    return float(df.loc[mask, TARGET_COLUMN].quantile(PEAK_QUANTILE))
 
 
 def get_final_split(df):
@@ -272,8 +281,7 @@ def prepare_split(df, split, lookback=24, feature_set="base"):
     X_es, y_es, idx_es = pick(split.early_stop)
     X_eval, y_eval, idx_eval = pick(split.eval)
 
-    train_target = df.loc[split.train & keep, TARGET_COLUMN]
-    peak_threshold = float(train_target.quantile(PEAK_QUANTILE))
+    peak_threshold = PEAK_THRESHOLD_KW
 
     return {
         "split": split.name,
