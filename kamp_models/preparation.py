@@ -47,6 +47,26 @@ def _read_csv(path: Path) -> pd.DataFrame:
     return pd.read_csv(path, encoding="utf-8-sig")
 
 
+def _feature_columns_for_frame(frame: pd.DataFrame) -> list[str]:
+    """Use the KJH engineered feature set when it is present in the CSV."""
+    if "전력_lag168" not in frame.columns:
+        return list(FEATURE_COLUMNS)
+
+    from src.features import get_feature_target_split
+
+    engineered, _ = get_feature_target_split(frame, target_col=TARGET_COLUMN)
+    non_numeric = [
+        column
+        for column in engineered.columns
+        if not pd.api.types.is_numeric_dtype(engineered[column])
+    ]
+    if non_numeric:
+        raise TypeError(
+            "Engineered model features must be numeric: " + ", ".join(non_numeric)
+        )
+    return [TARGET_COLUMN, *engineered.columns.tolist()]
+
+
 def _normalise_cleaned_frame(frame: pd.DataFrame) -> pd.DataFrame:
     result = frame.copy()
     if DATE_COLUMN not in result or HOUR_COLUMN not in result:
@@ -65,8 +85,19 @@ def _normalise_cleaned_frame(frame: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("Cleaned data must be a continuous hourly series")
     if TARGET_COLUMN not in result:
         raise KeyError(f"Cleaned data requires target column {TARGET_COLUMN!r}")
-    if result.isna().any().any():
-        raise ValueError("Cleaned data still contains missing values")
+    null_columns = result.columns[result.isna().any()].tolist()
+    if null_columns:
+        if "전력_lag168" not in result.columns:
+            raise ValueError("Cleaned data still contains missing values")
+        allowed_nulls = set(_feature_columns_for_frame(result)) - {TARGET_COLUMN}
+        unexpected_nulls = [
+            column for column in null_columns if column not in allowed_nulls
+        ]
+        if unexpected_nulls:
+            raise ValueError(
+                "Engineered data contains unexpected missing values: "
+                + ", ".join(unexpected_nulls)
+            )
     return result
 
 
@@ -85,14 +116,24 @@ def load_or_clean_csv(source_csv: str | Path) -> tuple[pd.DataFrame, str]:
 def verify_cleaned_reference(
     cleaned: pd.DataFrame,
     reference_csv: str | Path,
-) -> None:
+) -> pd.DataFrame:
     reference = _normalise_cleaned_frame(_read_csv(Path(reference_csv)))
+    missing_reference_columns = [
+        column for column in reference.columns if column not in cleaned.columns
+    ]
+    if missing_reference_columns:
+        raise KeyError(
+            "Prepared data is missing cleaned-reference columns: "
+            + ", ".join(missing_reference_columns)
+        )
+    comparable = _normalise_cleaned_frame(cleaned[reference.columns].copy())
     assert_frame_equal(
-        cleaned.reset_index(drop=True),
+        comparable.reset_index(drop=True),
         reference.reset_index(drop=True),
         check_dtype=False,
         check_exact=True,
     )
+    return comparable
 
 
 def write_cleaned_csv(cleaned: pd.DataFrame, output_csv: str | Path) -> Path:
@@ -126,11 +167,18 @@ def make_supervised_windows(
     if len(cleaned) < context_length + horizon:
         raise ValueError("Not enough rows to create one forecasting window")
 
-    feature_columns = list(FEATURE_COLUMNS)
+    feature_columns = _feature_columns_for_frame(cleaned)
     missing_features = [column for column in feature_columns if column not in cleaned]
     if missing_features:
         raise KeyError(f"Cleaned data is missing canonical features: {missing_features}")
-    feature_values = cleaned[feature_columns].astype(np.float32).to_numpy()
+    feature_frame = cleaned[feature_columns].astype(np.float32)
+    if "전력_lag168" in cleaned.columns:
+        # Initial lag values have no prior history. Zero filling is causal and
+        # preserves the original timeline used by every existing model.
+        feature_frame = feature_frame.fillna(0.0)
+    feature_values = feature_frame.to_numpy()
+    if not np.isfinite(feature_values).all():
+        raise ValueError("Model features contain NaN or infinite values")
     target_values = cleaned[TARGET_COLUMN].astype(np.float32).to_numpy()
 
     contexts = np.lib.stride_tricks.sliding_window_view(
@@ -182,11 +230,11 @@ def prepare_csv_to_npz(
     generated_hash: str | None = None
     reference_hash: str | None = None
     if reference_path is not None:
-        verify_cleaned_reference(cleaned, reference_path)
+        comparable_cleaned = verify_cleaned_reference(cleaned, reference_path)
         reference_match = True
         reference_hash = _sha256(reference_path)
         generated_csv = destination.with_suffix(".cleaned.csv")
-        write_cleaned_csv(cleaned, generated_csv)
+        write_cleaned_csv(comparable_cleaned, generated_csv)
         generated_hash = _sha256(generated_csv)
         if generated_hash != reference_hash:
             raise AssertionError(
