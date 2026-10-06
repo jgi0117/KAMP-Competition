@@ -1,6 +1,9 @@
 # 데이터 및 대용량 파일
-data/
+data/*
+!data/okm_features_2021.csv
 *.csv
+!data/okm_features_2021.csv
+!reports/**/*.csv
 *.xlsx
 *.xls
 *.parquet
@@ -8,8 +11,8 @@ data/
 *.tar.gz
 *.7z
 
-# 단, reports 하위의 요약 분석 CSV 파일은 버전 관리 허용
-!reports/**/*.csv
+# 임시 스크래치 파일
+scratch/
 
 # 환경 변수 및 개인 설정 파일
 .env
@@ -19,6 +22,7 @@ data/
 
 # 파이썬 및 가상환경 캐시
 __pycache__/
+catboost_info/
 *.py[cod]
 *$py.class
 *.so

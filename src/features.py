@@ -87,6 +87,9 @@ def create_calendar_features(df: pd.DataFrame) -> pd.DataFrame:
     df["공휴일여부"] = df["날짜"].astype(str).isin(HOLIDAYS_2021).astype(int)
     df["영업일여부"] = ((df["주말여부"] == 0) & (df["공휴일여부"] == 0)).astype(int)
     
+    # 당일 잔여 시간 (24 - 시간: 일일 누적 생산량과 결합하여 잔업/조기정리 스케줄링 의사결정 포착)
+    df["일일잔여시간"] = 24 - df["시간"]
+    
     return df
 
 
@@ -122,6 +125,9 @@ def create_autoregressive_features(df: pd.DataFrame) -> pd.DataFrame:
     # 모멘텀/가속도 (lag1과 상관계수 r=0.223으로 다중공선성 해소 직교 피처)
     df["전력_diff1"] = target_series.shift(1) - target_series.shift(2)
     
+    # 전일 동시간대 대비 증감량 (t-1 vs t-25: 일간 24시간 주기 변화 직교화 포착)
+    df["전력_전일동시간_diff"] = target_series.shift(1) - target_series.shift(25)
+    
     # 일간 24시간 주기 (r = 0.3749)
     df["전력_lag24"] = target_series.shift(24)
     
@@ -131,6 +137,16 @@ def create_autoregressive_features(df: pd.DataFrame) -> pd.DataFrame:
     # 24시간 롤링 기저 추세 및 변동성 (t-1 기준)
     df["전력_rolling_mean_24h"] = target_series.shift(1).rolling(24, min_periods=1).mean()
     df["전력_rolling_std_24h"] = target_series.shift(1).rolling(24, min_periods=1).std().fillna(0.0)
+    
+    # 3시간 초단기 조업 모멘텀 이동평균 (t-1 기준: 직전 3시간 평균 조업 강도 포착, 1시간 노이즈 완충)
+    df["전력_rolling_mean_3h"] = target_series.shift(1).rolling(3, min_periods=1).mean()
+    
+    # 영업일 13시 점심 복귀 반등 보정량 (t-2 vs t-1: 12시 점심 급감량만큼 13시 복귀 추정, 12시 lag1 왜곡 방지)
+    df["점심반등예상량"] = np.where(
+        (df["시간"] == 13) & (df["영업일여부"] == 1),
+        np.maximum(target_series.shift(2) - target_series.shift(1), 0.0),
+        0.0
+    )
     
     return df
 
@@ -152,6 +168,9 @@ def create_production_features(df: pd.DataFrame) -> pd.DataFrame:
     # 인당 생산성 (조업 밀도)
     workers_lag1 = df["공장인원"].shift(1)
     df["인당생산량_lag1"] = df["생산량_lag1"] / (workers_lag1 + 0.1)
+    
+    # 주말 또는 공휴일인데도 직전 시간에 생산량이 발생한 특근 조업 식별 플래그 (t-1 생산 실적 기반)
+    df["휴일특근조업_lag1"] = ((df["영업일여부"] == 0) & (df["생산량"].shift(1) > 0)).astype(int)
     
     return df
 
@@ -179,6 +198,45 @@ def create_weather_features(df: pd.DataFrame) -> pd.DataFrame:
     # 외기 온도 단기 변화율 (공조기 가동 트리거)
     df["기온_변화량"] = temp - temp.shift(1).fillna(temp)
     
+    # 건물 축열 및 열용량 지연 효과 (외기 온도의 6시간 지수이동평균)
+    df["기온_축열_ema_6h"] = temp.ewm(span=6).mean()
+    
+    # 대기 절대 수증기 분압 (hPa, Tetens 공식 기반 순수 대기 수분량 측정)
+    svp = 6.1078 * np.exp((17.27 * temp) / (temp + 237.3))
+    df["수증기압"] = svp * (humidity / 100.0)
+    
+    # 냉방 잠열 부하 지수 (CDD 현열 * 수증기 분압 잠열 가중치)
+    df["냉방잠열부하"] = df["냉방도일_CDD"] * (1.0 + df["수증기압"] / 20.0)
+    
+    return df
+
+
+def create_cumulative_work_features(df: pd.DataFrame) -> pd.DataFrame:
+    """일일 누적 조업 및 설비 연속 가동 피처를 생성합니다. (Strict Causality: shift(1) 강제)"""
+    df = df.copy()
+    
+    # 1. 당일 누적 전력 사용량 (00시부터 t-1시까지 누적, 당일 에너지 소비 페이스 및 기저 부하 포착)
+    df["일일누적전력_lag1"] = df.groupby("날짜")["전력_평균_실수"].transform(
+        lambda s: s.shift(1).fillna(0.0).cumsum()
+    )
+    
+    # 2. 당일 누적 생산 실적 (00시부터 t-1시까지 누적, 일일 생산 목표 진도율 포착)
+    df["일일누적생산량_lag1"] = df.groupby("날짜")["생산량"].transform(
+        lambda s: s.shift(1).fillna(0.0).cumsum()
+    )
+    
+    # 3. 연속 조업 시간 (기계가 쉬지 않고 가동된 연속 시간, 설비 발열 및 모터 부하 포착)
+    is_operating = (df["생산량"].shift(1) > 0).astype(int)
+    consec = []
+    cur = 0
+    for val in is_operating:
+        if val == 1:
+            cur += 1
+        else:
+            cur = 0
+        consec.append(cur)
+    df["연속조업시간_lag1"] = consec
+    
     return df
 
 
@@ -205,8 +263,11 @@ def build_feature_pipeline(df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
     print(">>> [피처 생성 4단계] 생산 상태 및 동역학 피처 생성 (Lag 1 기반)...")
     df = create_production_features(df)
     
-    print(">>> [피처 생성 5단계] 외기 열역학 및 공조 부하 피처 생성 (CDD, HDD, DI)...")
+    print(">>> [피처 생성 5단계] 외기 열역학 및 공조 부하 피처 생성 (CDD, HDD, DI, 축열 EMA)...")
     df = create_weather_features(df)
+    
+    print(">>> [피처 생성 6단계] 일일 누적 조업 및 설비 연속 가동 피처 생성 (Strict Causality)...")
+    df = create_cumulative_work_features(df)
     
     print(f"\n[피처 파이프라인 완료] 생성 완료: {df.shape[0]}행 × {df.shape[1]}열")
     return df
