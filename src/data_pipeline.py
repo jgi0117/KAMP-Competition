@@ -40,6 +40,42 @@ FEATURE_COLUMNS = [
     "주말여부",
 ]
 
+# ---------------------------------------------------------
+# 피처 조합 (정현님 2차 데이터 okm_features2_2021.csv 기준)
+#
+# observed: 그 시간에 측정되는 값. 입력 창에는 t-L ~ t-1 시점 값만 들어간다.
+# known   : 시점 t 를 예측하기 전에 이미 아는 값 (달력·조업 일정, 과거 값만으로 만든 파생).
+#           입력 창의 각 칸에 "다음 시간" 값을 넣는다. 그래서 마지막 칸(t-1)에
+#           예측할 시점 t 의 값이 들어간다. 미래 측정값이 아니므로 누출이 아니다.
+#
+# 제외: 공장인원·인당생산량(팀 합의), 주차(Test 주차가 학습에 없음),
+#       전력_lag168·rolling·전일동시간_diff(간이 실험에서 성능 저하), 일일누적전력(효과 없음)
+# ---------------------------------------------------------
+OBS_BASE = ["전력_평균_실수", "생산량", "기온", "풍속", "습도", "강수량"]
+CALENDAR = [
+    "시간_sin", "시간_cos", "주말여부", "요일_sin", "요일_cos", "월_sin", "월_cos",
+    "점심시간여부", "조업시간대", "공휴일여부", "영업일여부", "일일잔여시간",
+    "월요일기동시간여부", "조업집중시간여부",
+]
+WEATHER_DERIVED = [
+    "냉방도일_CDD", "난방도일_HDD", "불쾌지수_DI", "체감온도",
+    "기온_변화량", "기온_축열_ema_6h", "수증기압", "냉방잠열부하",
+]
+PRODUCTION_DERIVED = [
+    "가동상태_lag1", "설비기동여부", "연속조업시간_lag1", "생산량_lag1",
+    "생산량_diff1", "일일누적생산량_lag1", "휴일특근조업_lag1",
+]
+
+FEATURE_SETS = {
+    # 1차 그리드 서치와 같은 입력 (9개, 모두 observed)
+    "base": {"observed": FEATURE_COLUMNS, "known": []},
+    # F1: 기본 측정값 + 예측 시점의 달력·조업 일정
+    "F1": {"observed": OBS_BASE, "known": CALENDAR},
+    # F2: F1 + 기상 파생(측정값) + 생산·설비 파생 + 점심반등예상량
+    "F2": {"observed": OBS_BASE + WEATHER_DERIVED,
+           "known": CALENDAR + PRODUCTION_DERIVED + ["점심반등예상량"]},
+}
+
 # 최종 Test 구간 시작. 튜닝(그리드 서치) 과정에서는 이 이후 데이터를 평가에 쓰지 않는다.
 TEST_START = pd.Timestamp("2021-08-16 00:00:00")
 
@@ -160,9 +196,33 @@ def get_final_split(df):
 # Scaling
 # =========================================================
 
-def scale_data(df, train_mask):
+def build_features(df, feature_set="base"):
+    """피처 조합에 맞는 입력 행렬과 컬럼 이름을 만든다.
+
+    known 피처는 한 칸 앞당겨(shift -1) 붙인다. 행 i 에 i+1 시점 값이 들어가므로,
+    X[t-L:t] 창의 마지막 칸에 예측할 시점 t 의 달력·조업 정보가 담긴다.
+    """
+    spec = FEATURE_SETS[feature_set]
+    missing = [c for c in spec["observed"] + spec["known"] if c not in df.columns]
+    if missing:
+        raise KeyError(f"피처 조합 '{feature_set}'에 필요한 컬럼이 데이터에 없습니다: {missing}")
+
+    observed = df[spec["observed"]].astype(np.float64)
+    if observed.isnull().any().any():
+        raise ValueError("observed 피처에 결측치가 있습니다.")
+    frames = [observed]
+    names = list(spec["observed"])
+    if spec["known"]:
+        # 과거값 파생의 맨 앞 몇 행(이전 값이 없는 행)은 0, 마지막 행(다음 시간이 없음)은 직전 값으로 채운다
+        known = df[spec["known"]].astype(np.float64).fillna(0.0).shift(-1).ffill()
+        frames.append(known)
+        names += [f"{c}(t+1)" for c in spec["known"]]
+    return pd.concat(frames, axis=1).to_numpy(dtype=np.float64), names
+
+
+def scale_data(df, train_mask, feature_set="base"):
     """Scaler 는 학습 구간으로만 fit 하고, 전체에 transform 한다 (Leakage 방지)."""
-    X = df[FEATURE_COLUMNS].to_numpy(dtype=np.float64)
+    X, _ = build_features(df, feature_set)
     y = df[[TARGET_COLUMN]].to_numpy(dtype=np.float64)
 
     x_scaler = StandardScaler().fit(X[train_mask])
@@ -191,13 +251,13 @@ def create_sequences(X, y, lookback=24):
 # Split 별 데이터셋
 # =========================================================
 
-def prepare_split(df, split, lookback=24):
+def prepare_split(df, split, lookback=24, feature_set="base"):
     """하나의 Split 에 대해 학습/EarlyStopping/평가용 Sequence 와 Scaler, 피크 기준을 만든다.
 
     각 Sequence 는 Target 시점이 속한 구간으로 배정한다. 입력 window 는 항상 Target 이전
-    시점만 포함하므로, 평가 구간 Sequence 가 학습 구간 값을 입력으로 보는 것은 Leakage 가 아니다.
+    시점의 측정값만 포함하므로, 평가 구간 Sequence 가 학습 구간 값을 입력으로 보는 것은 Leakage 가 아니다.
     """
-    X_scaled, y_scaled, x_scaler, y_scaler = scale_data(df, split.train)
+    X_scaled, y_scaled, x_scaler, y_scaler = scale_data(df, split.train, feature_set)
     X_seq, y_seq, indices = create_sequences(X_scaled, y_scaled, lookback)
 
     keep = np.ones(len(df), dtype=bool)
@@ -217,6 +277,7 @@ def prepare_split(df, split, lookback=24):
 
     return {
         "split": split.name,
+        "feature_set": feature_set,
         "X_train": X_train, "y_train": y_train, "idx_train": idx_train,
         "X_es": X_es, "y_es": y_es, "idx_es": idx_es,
         "X_eval": X_eval, "y_eval": y_eval, "idx_eval": idx_eval,

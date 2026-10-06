@@ -47,6 +47,8 @@ def main():
     parser.add_argument("--max-epochs", type=int, default=gs.MAX_EPOCHS)
     parser.add_argument("--folds", type=int, default=len(dp.FOLD_VAL_RANGES),
                         help="그리드 서치에 사용한 fold 수 (기본 3)")
+    parser.add_argument("--space", choices=list(gs.SPACES), default="v1",
+                        help="그리드 서치 탐색 계획 (v1: 1차, v2: 2차 피처 실험). --grid-dir 와 맞춰야 한다")
     parser.add_argument("--selection", choices=["seed42", "confirm"], default="seed42",
                         help="최종 설정 선택 기준 (기본 seed42: 팀 공통 기준)")
     parser.add_argument("--seeds", type=int, nargs="+", default=[gs.DEFAULT_SEED],
@@ -54,6 +56,7 @@ def main():
     args = parser.parse_args()
     SEEDS = args.seeds
 
+    gs.use_space(args.space)
     gs.RESULTS_DIR = Path(args.grid_dir)
     out_dir = Path(args.out_dir)
     (out_dir / "models").mkdir(parents=True, exist_ok=True)
@@ -84,7 +87,7 @@ def main():
 
     for name, choice in choices.items():
         params = choice["params"]
-        data = dp.prepare_split(df, split, params["lookback"])
+        data = dp.prepare_split(df, split, params["lookback"], params.get("feature_set", "base"))
         if actual is None:
             actual = data["y_scaler"].inverse_transform(data["y_eval"]).ravel()
             idx_eval = data["idx_eval"]

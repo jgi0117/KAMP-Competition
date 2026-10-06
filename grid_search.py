@@ -18,6 +18,9 @@ Test 구간(8/16~)은 이 스크립트에서 사용하지 않는다.
     python grid_search.py --model lstm --stage 2
     python grid_search.py --model lstm --stage confirm
     python grid_search.py --model lstm --summary
+
+2차 피처 실험 (Stage 1 피처 조합 → Stage 2 lookback → Stage 3 dropout, seed 42):
+    python grid_search.py --space v2 --model tcn --stage 1 --data data/processed/okm_features2_2021.csv
 """
 
 import argparse
@@ -77,6 +80,47 @@ SEARCH_SPACE = {
         ],
     },
 }
+
+# 2차 실험 (정현님 피처 데이터 okm_features2_2021.csv)
+# 1차 결과로 고정: learning_rate 0.001, 1차에서 고른 구조, batch 32 (LSTM 16→32: RMSE 차이 0.01, 약 2배 빠름)
+# 탐색: Stage 1 피처 조합 F1/F2 → Stage 2 lookback (1차 최적 + 1차 2위) → Stage 3 dropout 0.2/0.3
+SEARCH_SPACE_V2 = {
+    "lstm": {
+        "base": dict(feature_set="F1", lookback=168, hidden_units=128, num_layers=2,
+                     dropout=0.3, learning_rate=1e-3, batch_size=32),
+        "stages": [
+            {"feature_set": ["F1", "F2"]},
+            {"lookback": [168, 48]},
+            {"dropout": [0.3, 0.2]},
+        ],
+    },
+    "tcn": {
+        "base": dict(feature_set="F1", lookback=24, filters=128, kernel_size=2, dilations="auto+1",
+                     dropout=0.3, learning_rate=1e-3, batch_size=32),
+        "stages": [
+            {"feature_set": ["F1", "F2"]},
+            {"lookback": [24, 48]},
+            {"dropout": [0.3, 0.2]},
+        ],
+    },
+    "tcn_lstm": {
+        "base": dict(feature_set="F1", lookback=48, filters=64, kernel_size=3, dilations="auto",
+                     lstm_units=64, dropout=0.2, learning_rate=1e-3, batch_size=32),
+        "stages": [
+            {"feature_set": ["F1", "F2"]},
+            {"lookback": [48, 24]},
+            {"dropout": [0.2, 0.3]},
+        ],
+    },
+}
+
+SPACES = {"v1": SEARCH_SPACE, "v2": SEARCH_SPACE_V2}
+
+
+def use_space(name):
+    """탐색 계획을 바꾼다 (v1: 1차 그리드 서치, v2: 2차 피처 실험)."""
+    global SEARCH_SPACE
+    SEARCH_SPACE = SPACES[name]
 
 KEY_COLS = ["config_id", "seed", "fold"]
 
@@ -241,10 +285,10 @@ def final_choice(model_name, results, n_folds, mode="seed42"):
 _split_cache = {}
 
 
-def get_split_data(df, split, lookback):
-    key = (split.name, lookback)
+def get_split_data(df, split, lookback, feature_set="base"):
+    key = (split.name, lookback, feature_set)
     if key not in _split_cache:
-        _split_cache[key] = dp.prepare_split(df, split, lookback)
+        _split_cache[key] = dp.prepare_split(df, split, lookback, feature_set)
     return _split_cache[key]
 
 
@@ -289,7 +333,7 @@ def predict_kw(model, data):
 
 
 def run_one(model_name, params, seed, df, split, max_epochs):
-    data = get_split_data(df, split, params["lookback"])
+    data = get_split_data(df, split, params["lookback"], params.get("feature_set", "base"))
     model, info = train_model(model_name, params, seed, data, max_epochs)
     pred, actual = predict_kw(model, data)
     metrics = evaluate_regression(actual, pred, data["peak_threshold"])
@@ -350,12 +394,18 @@ def main():
     parser.add_argument("--max-epochs", type=int, default=MAX_EPOCHS)
     parser.add_argument("--folds", type=int, default=len(dp.FOLD_VAL_RANGES),
                         help="앞에서부터 사용할 fold 수 (동작 확인용)")
-    parser.add_argument("--results-dir", help="결과 CSV 폴더 (기본: results/grid_search)")
+    parser.add_argument("--results-dir",
+                        help="결과 CSV 폴더 (기본: v1 은 results/grid_search, v2 는 results/grid_search_v2)")
+    parser.add_argument("--space", choices=list(SPACES), default="v1",
+                        help="탐색 계획: v1 1차 그리드 서치, v2 2차 피처 실험 (okm_features2_2021.csv 필요)")
     args = parser.parse_args()
 
     global RESULTS_DIR
+    use_space(args.space)
     if args.results_dir:
         RESULTS_DIR = Path(args.results_dir)
+    elif args.space == "v2":
+        RESULTS_DIR = Path("results/grid_search_v2")
 
     df = dp.load_data(args.data)
     folds = dp.get_folds(df)[:args.folds]
