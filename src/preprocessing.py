@@ -10,14 +10,24 @@ from typing import Optional, Tuple
 import pandas as pd
 import numpy as np
 
+try:
+    from .config import LOCAL_DATA_DIR, CLEANED_DATA_PATH, REPORTS_DIR
+except (ImportError, ValueError):
+    try:
+        from src.config import LOCAL_DATA_DIR, CLEANED_DATA_PATH, REPORTS_DIR
+    except ImportError:
+        _root = Path(__file__).resolve().parent.parent
+        LOCAL_DATA_DIR = _root / "data"
+        CLEANED_DATA_PATH = LOCAL_DATA_DIR / "okm_cleaned_2021.csv"
+        REPORTS_DIR = _root / "reports"
+
 
 def load_raw_data(data_path: Optional[Path] = None) -> pd.DataFrame:
     """원본 CSV 데이터를 안전하게 로드합니다."""
     if data_path is None:
-        # 프로젝트 루트 기준 data 폴더
-        root_dir = Path(__file__).resolve().parent.parent
-        data_path = root_dir / "data" / "okm_augumented_2021.csv"
+        data_path = LOCAL_DATA_DIR / "okm_augumented_2021.csv"
     
+    data_path = Path(data_path)
     if not data_path.exists():
         raise FileNotFoundError(f"데이터 파일을 찾을 수 없습니다: {data_path}")
     
@@ -130,11 +140,84 @@ def add_derived_features(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def save_preprocessed_data(
+    df: pd.DataFrame,
+    output_path: Optional[Path] = None,
+    encoding: str = "utf-8-sig",
+    also_save_alias: bool = True,
+) -> Path:
+    """정제 완료된 전처리 데이터를 CSV 파일로 저장합니다.
+    
+    Args:
+        df: 정제 완료된 데이터프레임
+        output_path: 저장 파일 경로 (기본값: data/okm_cleaned_2021.csv)
+        encoding: CSV 인코딩 (기본값: 'utf-8-sig' - 엑셀 한글 깨짐 방지)
+        also_save_alias: okm_preprocessed_2021.csv 별칭 파일 동시 생성 여부
+    
+    Returns:
+        Path: 저장된 파일 경로
+    """
+    if output_path is None:
+        output_path = CLEANED_DATA_PATH
+    
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    df.to_csv(output_path, index=False, encoding=encoding)
+    file_size_kb = output_path.stat().st_size / 1024
+    print(f"\n[저장 완료] 정제 데이터: {output_path} ({file_size_kb:.1f} KB)")
+    print(f"            형태: {df.shape[0]}행 × {df.shape[1]}열, 인코딩: {encoding}")
+    
+    if also_save_alias:
+        alias_path = output_path.parent / "okm_preprocessed_2021.csv"
+        if alias_path.resolve() != output_path.resolve():
+            df.to_csv(alias_path, index=False, encoding=encoding)
+            alias_size_kb = alias_path.stat().st_size / 1024
+            print(f"[저장 완료] 별칭 데이터: {alias_path} ({alias_size_kb:.1f} KB)")
+            
+    return output_path
+
+
+def load_cleaned_data(
+    data_path: Optional[Path] = None,
+    auto_generate: bool = True
+) -> pd.DataFrame:
+    """팀원 공유용 정제 완료 전처리 데이터를 불러옵니다.
+    
+    파일이 존재하지 않는 경우 파이프라인을 자동 실행하여 생성 후 로드합니다.
+    
+    Args:
+        data_path: 정제 CSV 파일 경로 (기본값: data/okm_cleaned_2021.csv)
+        auto_generate: 파일이 없을 때 전처리 파이프라인 자동 실행 여부
+        
+    Returns:
+        pd.DataFrame: 결측치/이상치 정제 완료된 데이터프레임
+    """
+    if data_path is None:
+        data_path = CLEANED_DATA_PATH
+    
+    data_path = Path(data_path)
+    if not data_path.exists():
+        alias_path = data_path.parent / "okm_preprocessed_2021.csv"
+        if alias_path.exists():
+            data_path = alias_path
+        elif auto_generate:
+            print(f"[load] 정제 데이터가 없어 전처리 파이프라인을 자동 실행하여 생성합니다: {data_path}")
+            return run_preprocessing_pipeline(save_output=True, output_path=data_path)
+        else:
+            raise FileNotFoundError(f"정제 데이터 파일을 찾을 수 없습니다: {data_path}")
+            
+    df = pd.read_csv(data_path, encoding="utf-8-sig", parse_dates=["날짜"])
+    return df
+
+
 def run_preprocessing_pipeline(
     data_path: Optional[Path] = None,
+    save_output: bool = True,
+    output_path: Optional[Path] = None,
     save_summary: bool = True
 ) -> pd.DataFrame:
-    """전체 전처리 파이프라인을 실행하고 결과를 검증합니다."""
+    """전체 전처리 파이프라인을 실행하고 결과를 검증 및 저장합니다."""
     print(">>> [전처리 1단계] 원본 데이터 로드...")
     df = load_raw_data(data_path)
     initial_shape = df.shape
@@ -152,7 +235,7 @@ def run_preprocessing_pipeline(
     print(">>> [전처리 5단계] 결측치 보정 (공장인원 0.0, 풍속 선형보간, 강수량 선형보간)...")
     df = impute_missing_values(df)
 
-    print(">>> [전처리 6단계] 파생 변수 생성 (공장_셧다운_여부, 전력_평균_실수)...")
+    print(">>> [전처리 6단계] 필수 정제 플래그 생성 (공장_셧다운_여부, 전력_평균_실수)...")
     df = add_derived_features(df)
 
     # 전처리 완료 후 무결성 검증
@@ -170,8 +253,19 @@ def run_preprocessing_pipeline(
     else:
         print("[성공] 모든 결측치가 완벽히 정제되었습니다 (결측치 0개).")
 
+    # 정제 데이터 파일 저장 (팀원 공유용)
+    if save_output:
+        save_preprocessed_data(df, output_path=output_path)
+
+    # 요약 통계 저장
+    if save_summary:
+        summary_path = REPORTS_DIR / "cleaned_data_summary.csv"
+        REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        df.describe().round(4).to_csv(summary_path, encoding="utf-8-sig")
+        print(f"[저장 완료] 정제 데이터 통계 요약: {summary_path}")
+
     return df
 
 
 if __name__ == "__main__":
-    df_cleaned = run_preprocessing_pipeline()
+    df_cleaned = run_preprocessing_pipeline(save_output=True)

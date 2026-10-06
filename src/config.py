@@ -18,13 +18,20 @@ if ENV_PATH.exists():
 else:
     load_dotenv()  # 시스템 환경 변수 또는 상위 디렉터리 탐색
 
-# 원본 데이터 디렉터리 경로 (.env의 DATA_DIR 우선)
+# 프로젝트 로컬 데이터 디렉터리
+LOCAL_DATA_DIR = ROOT_DIR / "data"
+LOCAL_DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+# 원본 데이터 디렉터리 경로 (.env의 DATA_DIR이 존재하면 우선 사용, 없으면 로컬 data 폴더)
 _env_data_dir = os.getenv("DATA_DIR")
-if _env_data_dir:
+if _env_data_dir and Path(_env_data_dir).exists():
     DATA_DIR = Path(_env_data_dir).expanduser().resolve()
 else:
-    # 기본 폴백 경로: 레포지토리 외부 또는 로컬 data 폴더 예시
-    DATA_DIR = ROOT_DIR.parent / "data"
+    # 기본 폴백 경로: 프로젝트 로컬 data 폴더
+    DATA_DIR = LOCAL_DATA_DIR
+
+# 정제 완료 데이터 파일 경로
+CLEANED_DATA_PATH = LOCAL_DATA_DIR / "okm_cleaned_2021.csv"
 
 # 보고서 및 시각화 저장 디렉터리
 REPORTS_DIR = ROOT_DIR / "reports"

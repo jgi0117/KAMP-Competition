@@ -4,6 +4,8 @@
 - **작업 브랜치**: `kjh`
 - **대상 파일**: `data/okm_augumented_2021.csv` (총 6,168행 × 18개 열)
 - **최종 산출물**: 
+  - **정제 완료 데이터셋**: [`data/okm_cleaned_2021.csv`](file:///c:/LSAXMakers/LSAXMakers_Project/data/okm_cleaned_2021.csv) (6,168행 × 22열, 584.7 KB, UTF-8-SIG)
+  - **정제 데이터 별칭 사본**: [`data/okm_preprocessed_2021.csv`](file:///c:/LSAXMakers/LSAXMakers_Project/data/okm_preprocessed_2021.csv)
   - 정제 파이프라인 모듈: [`src/preprocessing.py`](file:///c:/LSAXMakers/LSAXMakers_Project/src/preprocessing.py)
   - 분석 및 검증 노트북: [`notebooks/kjh/02_preprocessing_and_eda.ipynb`](file:///c:/LSAXMakers/LSAXMakers_Project/notebooks/kjh/02_preprocessing_and_eda.ipynb)
   - 기술통계 요약표: [`reports/cleaned_data_summary.csv`](file:///c:/LSAXMakers/LSAXMakers_Project/reports/cleaned_data_summary.csv)
@@ -116,28 +118,41 @@
 
 ## 4. 팀원 재현 및 코드 사용법
 
-다른 팀원들은 번거로운 전처리 과정을 반복할 필요 없이, 아래와 같이 `src/preprocessing.py`의 함수를 호출하여 완벽히 정제된 데이터를 즉시 가져올 수 있습니다.
+다른 팀원들은 번거로운 전처리 과정을 반복할 필요 없이, 아래 두 가지 방법 중 원하는 방식으로 완벽히 정제된 데이터를 즉시 가져올 수 있습니다.
 
+### 방법 1. 정제 데이터 직접 로드 (가장 권장 - 1초 소요)
+저장된 CSV 파일(`data/okm_cleaned_2021.csv`)을 바로 읽어옵니다. (파일이 없을 경우 파이프라인 자동 실행)
 ```python
-import sys
-from pathlib import Path
+from src.preprocessing import load_cleaned_data
 
-# src 모듈 임포트
-from src.preprocessing import run_preprocessing_pipeline
+# 정제 완료 데이터셋 로드 (날짜 datetime 파싱 및 UTF-8-SIG 한글 자동 처리)
+df_clean = load_cleaned_data()
 
-# 원본 데이터 로드 -> 날짜/컬럼 표준화 -> 시간 복원 -> 결측치 보정 -> 파생변수 생성 원스톱 실행
-df_clean = run_preprocessing_pipeline()
-
-# 확인
 print(df_clean.shape)                  # (6168, 22) 출력
 print(df_clean.isnull().sum().sum())   # 0 출력 (결측치 0개 완벽 정제)
 print(df_clean.head(3))
 ```
 
+### 방법 2. 원본 데이터 기반 전처리 파이프라인 전체 재현
+원본 CSV(`data/okm_augumented_2021.csv`)로부터 모든 결측치/이상치 정제 로직을 다시 수행하고 파일로 재저장합니다.
+```python
+from src.preprocessing import run_preprocessing_pipeline
+
+# 원본 데이터 로드 -> 날짜/컬럼 표준화 -> 시간 복원 -> 결측치 보정 -> 정제 플래그 생성 -> 파일 저장 원스톱 실행
+df_clean = run_preprocessing_pipeline(save_output=True)
+```
+
+> 💡 **엑셀(Excel) 사용자 참고**: 저장된 CSV 파일은 `utf-8-sig` 인코딩으로 저장되어 있어 Windows 엑셀에서 더블클릭으로 바로 열어도 한글 컬럼명이 깨지지 않습니다.
+
 ---
 
 ## 5. 생성된 산출물 파일 구조
 ```text
+data/
+├── okm_augumented_2021.csv          # 원본 제조 데이터셋 (6,168행 × 18개 열)
+├── okm_cleaned_2021.csv             # [신규] 전처리 정제 완료 데이터 (6,168행 × 22개 열, 584.7 KB)
+└── okm_preprocessed_2021.csv        # [신규] 전처리 정제 데이터 별칭 사본 (동일 내용)
+
 reports/
 ├── preprocessing_documentation.md   # 본 설명 문서
 ├── cleaned_data_summary.csv         # 정제 완료 데이터의 22개 컬럼 전체 기술통계표
