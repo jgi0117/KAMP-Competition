@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>OKM 전력예측 그리드 서치 결과</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: 단일 칼럼 리포트. 요약표 → 지표별 비교 → fold → lookback → 튜닝 과정 순으로 위에서 아래로 읽는다. */
+:root {
+  --bg: #f6f7f8;
+  --surface: #ffffff;
+  --ink: #111417;
+  --ink-2: #4b5259;
+  --muted: #7d858c;
+  --grid: #e3e6e8;
+  --axis: #c2c8cc;
+  --ring: rgba(17, 20, 23, 0.10);
+  --accent: #1f5f99;
+  --good-bg: #e6f1fb;
+  --s1: #2a78d6;   /* LSTM */
+  --s2: #eb6834;   /* TCN */
+  --s3: #1baf7a;   /* TCN-LSTM */
+  --font-body: "IBM Plex Sans KR", system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+  --font-num: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101214; --surface: #181b1e; --ink: #f2f4f5; --ink-2: #c3c9ce; --muted: #8b939a;
+    --grid: #2a2e32; --axis: #3d4348; --ring: rgba(255, 255, 255, 0.10); --accent: #7fb6ec;
+    --good-bg: #1b2b3b; --s1: #3987e5; --s2: #d95926; --s3: #199e70; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101214; --surface: #181b1e; --ink: #f2f4f5; --ink-2: #c3c9ce; --muted: #8b939a;
+  --grid: #2a2e32; --axis: #3d4348; --ring: rgba(255, 255, 255, 0.10); --accent: #7fb6ec;
+  --good-bg: #1b2b3b; --s1: #3987e5; --s2: #d95926; --s3: #199e70; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.65; }
+.wrap { max-width: 1040px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 64px; display: grid; gap: 40px; }
+header { display: grid; gap: 12px; }
+.eyebrow { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+h1 { font-size: clamp(26px, 4vw, 34px); line-height: 1.25; margin: 0; text-wrap: balance; font-weight: 700; }
+h2 { font-size: 20px; margin: 0; text-wrap: balance; font-weight: 700; }
+h3 { font-size: 15px; margin: 0; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+.lede { color: var(--ink-2); }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 20px; color: var(--ink-2); font-size: 13px; }
+.meta b { color: var(--ink); font-weight: 600; }
+section { display: grid; gap: 16px; min-width: 0; }
+.sec-head { display: grid; gap: 6px; }
+.note { font-size: 13px; color: var(--muted); }
+.panel { background: var(--surface); border-radius: 10px; box-shadow: 0 0 0 1px var(--ring); padding: 20px; min-width: 0; }
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.callout { border-left: 3px solid var(--accent); padding: 4px 0 4px 14px; color: var(--ink-2); max-width: 72ch; }
+
+/* 표 */
+.table-scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { font-size: 12px; color: var(--muted); font-weight: 600; letter-spacing: 0.02em; white-space: nowrap; }
+td.n, th.n { text-align: right; }
+td.n { font-family: var(--font-num); font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr.best td { background: var(--good-bg); }
+.sd { color: var(--muted); font-size: 12px; }
+.tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--accent); color: var(--surface); margin-left: 6px; vertical-align: 1px; }
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 8px; vertical-align: 0; }
+.cfg { font-size: 12.5px; color: var(--ink-2); line-height: 1.5; }
+
+/* 차트 */
+.trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 820px) { .trio { grid-template-columns: 1fr; } }
+.chart-card { display: grid; gap: 8px; min-width: 0; }
+.chart-card .dir { font-size: 12px; color: var(--muted); }
+svg { display: block; width: 100%; height: auto; overflow: visible; }
+svg text { font-family: var(--font-body); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--ink-2); }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.seg { display: inline-flex; border-radius: 8px; box-shadow: 0 0 0 1px var(--ring); overflow: hidden; }
+.seg button { font: inherit; font-size: 13px; padding: 6px 14px; border: 0; background: var(--surface); color: var(--ink-2); cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--grid); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.hit { cursor: default; }
+#tip { position: fixed; pointer-events: none; z-index: 10; background: var(--ink); color: var(--surface); font-size: 12.5px; line-height: 1.5; padding: 8px 10px; border-radius: 6px; max-width: 260px; }
+#tip .num { color: inherit; }
+details { font-size: 14px; }
+summary { cursor: pointer; color: var(--accent); font-weight: 600; font-size: 13px; }
+details[open] summary { margin-bottom: 10px; }
+
+/* 정의 */
+.defs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 820px) { .defs { grid-template-columns: 1fr; } }
+.def { display: grid; gap: 4px; font-size: 13.5px; color: var(--ink-2); }
+.def b { color: var(--ink); font-size: 14px; }
+.stages { display: grid; gap: 16px; }
+footer { font-size: 12.5px; color: var(--muted); display: grid; gap: 4px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+<style>body{margin:0}</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="eyebrow">KAMP 2026 · OKM 공장 전력 예측 · lhs</span>
+    <h1>딥러닝 3종 그리드 서치 결과 (검증 구간)</h1>
+    <p class="lede">LSTM, TCN, TCN-LSTM 세 모델을 같은 데이터와 같은 검증 방식으로 튜닝한 결과입니다. 과거 데이터로 다음 1시간의 평균 전력(kW)을 예측합니다. 아래 숫자는 모두 <b>검증 구간</b> 성능이고, Test 구간(8/16~9/14) 평가는 GPU 사용이 가능해지면 진행합니다.</p>
+    <div class="meta">
+      <span>학습 횟수 <b class="num">315회</b> (LSTM 84 · TCN 120 · TCN-LSTM 111)</span>
+      <span>검증 <b>시간순 fold 3개 × seed 3개</b></span>
+      <span>환경 <b>Colab T4 GPU</b></span>
+      <span>데이터 <b class="num">2021-01-01 ~ 09-14, 6,168시간</b></span>
+    </div>
+  </header>
+
+  <section aria-labelledby="s-summary">
+    <div class="sec-head">
+      <h2 id="s-summary">모델별 최종 성능</h2>
+      <p class="note">각 모델이 튜닝으로 고른 최종 설정을 fold 3개 × seed 3개, 총 9번 학습한 평균입니다. 작은 글씨는 9번 사이의 표준편차입니다. MSE·RMSE·MAE는 낮을수록, R²는 1에 가까울수록 좋습니다.</p>
+    </div>
+    <div class="panel table-scroll">
+      <table id="summary-table"></table>
+    </div>
+    <p class="callout">검증 기준으로는 <b>TCN</b>이 네 지표 모두에서 가장 좋습니다. LSTM보다 RMSE가 약 1.7 kW 낮고, 학습도 약 3배 빠릅니다. TCN과 LSTM을 하나로 연결한 TCN-LSTM은 TCN 단독보다 좋아지지 않았습니다.</p>
+  </section>
+
+  <section aria-labelledby="s-metrics">
+    <div class="sec-head">
+      <h2 id="s-metrics">지표별 비교</h2>
+      <p class="note">점은 9번 평균, 가로 막대는 평균 ± 1 표준편차입니다. 지표마다 단위가 달라서 차트를 나눴습니다.</p>
+    </div>
+    <div class="legend" id="legend-1"></div>
+    <div class="trio">
+      <div class="panel chart-card"><h3>MSE <span class="dir">(kW², 낮을수록 좋음)</span></h3><div id="c-mse"></div></div>
+      <div class="panel chart-card"><h3>RMSE <span class="dir">(kW, 낮을수록 좋음)</span></h3><div id="c-rmse"></div></div>
+      <div class="panel chart-card"><h3>R² <span class="dir">(1에 가까울수록 좋음)</span></h3><div id="c-r2"></div></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-folds">
+    <div class="sec-head">
+      <h2 id="s-folds">검증 기간별 성능</h2>
+      <p class="note">fold마다 그 이전 데이터 전체로 학습하고 31일을 검증합니다. 값은 seed 3개 평균입니다.</p>
+    </div>
+    <div class="panel chart-card">
+      <div class="toolbar">
+        <div class="legend" id="legend-2"></div>
+        <div class="seg" role="group" aria-label="fold 차트 지표 선택" id="seg-fold"></div>
+      </div>
+      <div id="c-fold"></div>
+      <details>
+        <summary>표로 보기</summary>
+        <div class="table-scroll"><table id="fold-table"></table></div>
+      </details>
+    </div>
+    <p class="callout">세 모델 모두 <b>fold2(6/16~7/15)</b>에서 오차가 가장 큽니다. 장마와 더위가 시작되면서 냉방 부하가 바뀌는 시기라 과거 패턴만으로 맞히기 어려운 구간입니다.</p>
+  </section>
+
+  <section aria-labelledby="s-lookback">
+    <div class="sec-head">
+      <h2 id="s-lookback">입력 길이(lookback)에 따른 성능</h2>
+      <p class="note">튜닝 1단계 결과입니다. 다른 설정은 기본값으로 두고 과거 몇 시간을 입력할지만 바꿨습니다(seed 42, fold 3개 평균). 테두리 원이 그 모델이 고른 값입니다.</p>
+    </div>
+    <div class="panel chart-card">
+      <div class="toolbar">
+        <div class="legend" id="legend-3"></div>
+        <div class="seg" role="group" aria-label="lookback 차트 지표 선택" id="seg-lb"></div>
+      </div>
+      <div id="c-lb"></div>
+    </div>
+    <p class="callout">LSTM은 <b>168시간(1주일)</b>을 볼 때 가장 좋았고, TCN은 <b>24시간</b>, TCN-LSTM은 <b>48시간</b>이 가장 좋았습니다. EDA에서 확인한 1주일 주기(lag 168h 상관 0.74)를 활용하는 방식이 모델마다 다릅니다.</p>
+  </section>
+
+  <section aria-labelledby="s-stages">
+    <div class="sec-head">
+      <h2 id="s-stages">튜닝 단계별 선택 과정</h2>
+      <p class="note">한 번에 모든 조합을 돌리지 않고, 한 단계에서 고른 값을 고정한 채 다음 단계로 넘어갔습니다. Stage 1~4는 seed 42 결과, Confirm은 상위 3개 설정을 seed 3개로 다시 확인한 결과입니다. 선택 규칙은 "RMSE 최저값 대비 2% 이내 설정 중 피크 구간 MAE가 가장 작은 것"입니다.</p>
+    </div>
+    <div class="stages" id="stages"></div>
+    <p class="callout">TCN-LSTM은 seed 42에서 RMSE 11.04였지만 seed 3개 평균은 12.64였습니다. seed 하나만 보고 골랐다면 성능을 과대평가할 뻔했습니다. Confirm 단계를 둔 이유입니다.</p>
+  </section>
+
+  <section aria-labelledby="s-defs">
+    <div class="sec-head"><h2 id="s-defs">지표 읽는 법</h2></div>
+    <div class="panel defs">
+      <div class="def"><b>MSE (평균제곱오차)</b>오차를 제곱해서 평균한 값입니다. 단위는 kW²입니다. 큰 오차에 벌점을 크게 주며, 모델 학습 손실로 쓴 값입니다.</div>
+      <div class="def"><b>RMSE (평균제곱근오차)</b>MSE의 제곱근입니다. 단위가 kW라서 "평균적으로 몇 kW 틀리는지"로 읽을 수 있습니다. 모델 선택의 기준 지표입니다.</div>
+      <div class="def"><b>R² (결정계수)</b>실제 전력 변동 중 모델이 설명하는 비율입니다. 0.966이면 변동의 96.6%를 설명한다는 뜻입니다. 시간·요일 패턴이 강한 데이터라 세 모델 모두 0.95 안팎으로 높게 나옵니다.</div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-next">
+    <div class="sec-head"><h2 id="s-next">다음 단계</h2></div>
+    <div class="panel">
+      <p>모델별 최종 설정으로 1/1~8/15 데이터를 사용해 다시 학습하고, <b>Test 구간(8/16~9/14, 셧다운 17시간 제외)</b>에서 한 번만 평가합니다. 같은 자리에서 IEEE EECR 2023 방식의 <b>Weighted Ensemble</b>(LSTM + TCN)도 평가합니다. 가중치는 검증 MSE의 역수로 정하며, 현재 결과로 계산하면 <b>TCN <span class="num" id="w-tcn"></span>, LSTM <span class="num" id="w-lstm"></span></b>입니다.</p>
+    </div>
+  </section>
+
+  <footer>
+    <span>피크 기준: 각 fold 학습 구간 전력의 상위 5% 값 (약 171~172 kW)</span>
+    <span>코드와 원본 결과: GitHub jgi0117/KAMP-Competition, lhs 브랜치 · grid_search.py, results/grid_search/*.csv</span>
+  </footer>
+</div>
+<div id="tip" hidden></div>
+
+<script>
+const DATA = {"weights": {"lstm": 0.423, "tcn": 0.577}, "models": {"lstm": {"params": {"batch_size": 16, "dropout": 0.3, "hidden_units": 128, "learning_rate": 0.001, "lookback": 168, "num_layers": 2}, "runs": 84, "sec": 151.0, "mse": {"mean": 155.77, "std": 61.48, "min": 99.27, "max": 258.29}, "rmse": {"mean": 12.28, "std": 2.39, "min": 9.96, "max": 16.07}, "r2": {"mean": 0.9529, "std": 0.0213, "min": 0.9183, "max": 0.9754}, "mae": {"mean": 8.27, "std": 1.53, "min": 6.61, "max": 10.81}, "peak_mae": {"mean": 16.31, "std": 4.17, "min": 11.1, "max": 22.69}, "folds": {"fold1": {"mse": 115.4, "rmse": 10.71, "r2": 0.961, "mae": 7.54}, "fold2": {"mse": 233.5, "rmse": 15.27, "r2": 0.926, "mae": 10.1}, "fold3": {"mse": 118.4, "rmse": 10.85, "r2": 0.971, "mae": 7.19}}, "progress": [{"stage": "Stage 1", "rmse": 12.9, "mse": 172.2, "r2": 0.949, "params": {"batch_size": 32, "dropout": 0.2, "hidden_units": 64, "learning_rate": 0.001, "lookback": 168, "num_layers": 1}}, {"stage": "Stage 2", "rmse": 12.33, "mse": 154.8, "r2": 0.953, "params": {"batch_size": 32, "dropout": 0.2, "hidden_units": 128, "learning_rate": 0.001, "lookback": 168, "num_layers": 2}}, {"stage": "Stage 3", "rmse": 12.19, "mse": 151.5, "r2": 0.955, "params": {"batch_size": 32, "dropout": 0.3, "hidden_units": 128, "learning_rate": 0.001, "lookback": 168, "num_layers": 2}}, {"stage": "Stage 4", "rmse": 12.2, "mse": 152.4, "r2": 0.955, "params": {"batch_size": 16, "dropout": 0.3, "hidden_units": 128, "learning_rate": 0.001, "lookback": 168, "num_layers": 2}}, {"stage": "Confirm", "rmse": 12.28, "mse": 155.8, "r2": 0.953, "params": {"batch_size": 16, "dropout": 0.3, "hidden_units": 128, "learning_rate": 0.001, "lookback": 168, "num_layers": 2}}], "lookback": [{"lookback": 24, "rmse": 14.847, "r2": 0.9342, "mse": 226.03}, {"lookback": 48, "rmse": 13.229, "r2": 0.9464, "mse": 178.74}, {"lookback": 72, "rmse": 15.3, "r2": 0.9294, "mse": 238.29}, {"lookback": 168, "rmse": 12.904, "r2": 0.9489, "mse": 172.15}]}, "tcn": {"params": {"batch_size": 16, "dilations": "auto+1", "dropout": 0.3, "filters": 128, "kernel_size": 2, "learning_rate": 0.001, "lookback": 24}, "runs": 120, "sec": 52.0, "mse": {"mean": 113.97, "std": 28.68, "min": 75.64, "max": 153.26}, "rmse": {"mean": 10.6, "std": 1.34, "min": 8.7, "max": 12.38}, "r2": {"mean": 0.9659, "std": 0.0103, "min": 0.9515, "max": 0.9778}, "mae": {"mean": 7.3, "std": 0.87, "min": 6.2, "max": 8.35}, "peak_mae": {"mean": 13.21, "std": 2.73, "min": 9.06, "max": 17.84}, "folds": {"fold1": {"mse": 88.3, "rmse": 9.38, "r2": 0.97, "mae": 6.54}, "fold2": {"mse": 148.7, "rmse": 12.19, "r2": 0.953, "mae": 8.25}, "fold3": {"mse": 104.9, "rmse": 10.23, "r2": 0.974, "mae": 7.1}}, "progress": [{"stage": "Stage 1", "rmse": 11.27, "mse": 130.6, "r2": 0.961, "params": {"batch_size": 32, "dilations": "auto", "dropout": 0.2, "filters": 64, "kernel_size": 3, "learning_rate": 0.001, "lookback": 24}}, {"stage": "Stage 2", "rmse": 10.93, "mse": 120.8, "r2": 0.964, "params": {"batch_size": 32, "dilations": "auto+1", "dropout": 0.2, "filters": 128, "kernel_size": 2, "learning_rate": 0.001, "lookback": 24}}, {"stage": "Stage 3", "rmse": 10.58, "mse": 116.0, "r2": 0.965, "params": {"batch_size": 32, "dilations": "auto+1", "dropout": 0.3, "filters": 128, "kernel_size": 2, "learning_rate": 0.001, "lookback": 24}}, {"stage": "Stage 4", "rmse": 10.58, "mse": 116.0, "r2": 0.965, "params": {"batch_size": 32, "dilations": "auto+1", "dropout": 0.3, "filters": 128, "kernel_size": 2, "learning_rate": 0.001, "lookback": 24}}, {"stage": "Confirm", "rmse": 10.6, "mse": 114.0, "r2": 0.966, "params": {"batch_size": 16, "dilations": "auto+1", "dropout": 0.3, "filters": 128, "kernel_size": 2, "learning_rate": 0.001, "lookback": 24}}], "lookback": [{"lookback": 24, "rmse": 11.269, "r2": 0.9607, "mse": 130.55}, {"lookback": 48, "rmse": 11.754, "r2": 0.9587, "mse": 138.32}, {"lookback": 72, "rmse": 13.507, "r2": 0.9453, "mse": 186.39}, {"lookback": 168, "rmse": 14.66, "r2": 0.9367, "mse": 225.05}]}, "tcn_lstm": {"params": {"batch_size": 32, "dilations": "auto", "dropout": 0.2, "filters": 64, "kernel_size": 3, "learning_rate": 0.001, "lookback": 48, "lstm_units": 64}, "runs": 111, "sec": 49.0, "mse": {"mean": 164.04, "std": 56.4, "min": 88.62, "max": 253.16}, "rmse": {"mean": 12.64, "std": 2.18, "min": 9.41, "max": 15.91}, "r2": {"mean": 0.9512, "std": 0.0185, "min": 0.92, "max": 0.9703}, "mae": {"mean": 8.88, "std": 1.29, "min": 6.92, "max": 10.78}, "peak_mae": {"mean": 17.89, "std": 5.42, "min": 9.89, "max": 26.06}, "folds": {"fold1": {"mse": 115.8, "rmse": 10.7, "r2": 0.961, "mae": 7.83}, "fold2": {"mse": 218.3, "rmse": 14.69, "r2": 0.931, "mae": 10.01}, "fold3": {"mse": 158.0, "rmse": 12.53, "r2": 0.961, "mae": 8.8}}, "progress": [{"stage": "Stage 1", "rmse": 11.04, "mse": 123.4, "r2": 0.963, "params": {"batch_size": 32, "dilations": "auto", "dropout": 0.2, "filters": 64, "kernel_size": 3, "learning_rate": 0.001, "lookback": 48, "lstm_units": 64}}, {"stage": "Stage 2", "rmse": 11.04, "mse": 123.4, "r2": 0.963, "params": {"batch_size": 32, "dilations": "auto", "dropout": 0.2, "filters": 64, "kernel_size": 3, "learning_rate": 0.001, "lookback": 48, "lstm_units": 64}}, {"stage": "Stage 3", "rmse": 11.04, "mse": 123.4, "r2": 0.963, "params": {"batch_size": 32, "dilations": "auto", "dropout": 0.2, "filters": 64, "kernel_size": 3, "learning_rate": 0.001, "lookback": 48, "lstm_units": 64}}, {"stage": "Stage 4", "rmse": 11.04, "mse": 123.4, "r2": 0.963, "params": {"batch_size": 32, "dilations": "auto", "dropout": 0.2, "filters": 64, "kernel_size": 3, "learning_rate": 0.001, "lookback": 48, "lstm_units": 64}}, {"stage": "Confirm", "rmse": 12.64, "mse": 164.0, "r2": 0.951, "params": {"batch_size": 32, "dilations": "auto", "dropout": 0.2, "filters": 64, "kernel_size": 3, "learning_rate": 0.001, "lookback": 48, "lstm_units": 64}}], "lookback": [{"lookback": 24, "rmse": 12.499, "r2": 0.9516, "mse": 162.69}, {"lookback": 48, "rmse": 11.039, "r2": 0.9634, "mse": 123.44}, {"lookback": 72, "rmse": 15.202, "r2": 0.9315, "mse": 236.22}, {"lookback": 168, "rmse": 17.179, "r2": 0.913, "mse": 310.2}]}}};
+const MODELS = [
+  { key: "lstm", name: "LSTM", color: "--s1" },
+  { key: "tcn", name: "TCN", color: "--s2" },
+  { key: "tcn_lstm", name: "TCN-LSTM", color: "--s3" },
+];
+const FOLDS = [
+  { key: "fold1", name: "fold1", period: "5/16 ~ 6/15" },
+  { key: "fold2", name: "fold2", period: "6/16 ~ 7/15" },
+  { key: "fold3", name: "fold3", period: "7/16 ~ 8/15" },
+];
+const METRICS = {
+  mse: { label: "MSE", unit: "kW²", digits: 1, lowerBetter: true },
+  rmse: { label: "RMSE", unit: "kW", digits: 2, lowerBetter: true },
+  r2: { label: "R²", unit: "", digits: 3, lowerBetter: false },
+  mae: { label: "MAE", unit: "kW", digits: 2, lowerBetter: true },
+};
+const PARAM_LABEL = {
+  lookback: "lookback", hidden_units: "units", num_layers: "층 수", filters: "filters",
+  kernel_size: "kernel", dilations: "dilation", lstm_units: "LSTM units",
+  dropout: "dropout", learning_rate: "lr", batch_size: "batch",
+};
+const NS = "http://www.w3.org/2000/svg";
+const css = (v) => `var(${v})`;
+const fmt = (v, d) => Number(v).toFixed(d);
+
+function el(tag, attrs = {}, parent) {
+  const n = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  if (parent) parent.appendChild(n);
+  return n;
+}
+function txt(parent, x, y, s, attrs = {}) {
+  const t = el("text", { x, y, fill: css("--ink-2"), "font-size": 11, ...attrs }, parent);
+  t.textContent = s;
+  return t;
+}
+function niceTicks(lo, hi, count = 4) {
+  const span = hi - lo;
+  const raw = span / count;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => span / s <= count) || 10 * mag;
+  const start = Math.floor(lo / step) * step;
+  const end = Math.ceil(hi / step) * step;
+  const ticks = [];
+  for (let v = start; v <= end + step / 1000; v += step) ticks.push(+v.toFixed(10));
+  return ticks;
+}
+
+/* ---------- 툴팁 ---------- */
+const tip = document.getElementById("tip");
+function showTip(evt, html) {
+  tip.innerHTML = html;
+  tip.hidden = false;
+  const pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = evt.clientX + pad, y = evt.clientY + pad;
+  if (x + w > window.innerWidth - 8) x = evt.clientX - w - pad;
+  if (y + h > window.innerHeight - 8) y = evt.clientY - h - pad;
+  tip.style.left = x + "px";
+  tip.style.top = y + "px";
+}
+function hideTip() { tip.hidden = true; }
+function bindTip(node, html) {
+  node.addEventListener("pointermove", (e) => showTip(e, html()));
+  node.addEventListener("pointerleave", hideTip);
+}
+
+/* ---------- 범례 ---------- */
+function legend(id) {
+  document.getElementById(id).innerHTML = MODELS.map(
+    (m) => `<span><span class="swatch" style="background:${css(m.color)}"></span>${m.name}</span>`).join("");
+}
+
+/* ---------- 요약표 ---------- */
+function cfgText(p) {
+  return Object.keys(PARAM_LABEL).filter((k) => k in p)
+    .map((k) => `${PARAM_LABEL[k]} ${k === "dilations" ? (p[k] === "auto+1" ? "자동+1단계" : "자동") : p[k]}`).join(" · ");
+}
+function summaryTable() {
+  const cols = ["mse", "rmse", "r2", "mae"];
+  const best = {};
+  cols.forEach((c) => {
+    const vals = MODELS.map((m) => DATA.models[m.key][c].mean);
+    best[c] = METRICS[c].lowerBetter ? Math.min(...vals) : Math.max(...vals);
+  });
+  const bestModel = MODELS.reduce((a, b) => DATA.models[a.key].rmse.mean <= DATA.models[b.key].rmse.mean ? a : b).key;
+  let h = `<thead><tr><th>모델</th>${cols.map((c) => `<th class="n">${METRICS[c].label}${METRICS[c].unit ? ` (${METRICS[c].unit})` : ""}</th>`).join("")}<th class="n">학습 1회</th><th>최종 설정</th></tr></thead><tbody>`;
+  MODELS.forEach((m) => {
+    const d = DATA.models[m.key];
+    h += `<tr class="${m.key === bestModel ? "best" : ""}"><td><span class="swatch" style="background:${css(m.color)}"></span><b>${m.name}</b>${m.key === bestModel ? '<span class="tag">최고</span>' : ""}</td>`;
+    cols.forEach((c) => {
+      const v = d[c];
+      const isBest = v.mean === best[c];
+      h += `<td class="n">${isBest ? "<b>" : ""}${fmt(v.mean, METRICS[c].digits)}${isBest ? "</b>" : ""}<br><span class="sd">± ${fmt(v.std, METRICS[c].digits)}</span></td>`;
+    });
+    h += `<td class="n">${d.sec}초</td><td class="cfg">${cfgText(d.params)}</td></tr>`;
+  });
+  document.getElementById("summary-table").innerHTML = h + "</tbody>";
+}
+
+/* ---------- 지표별 점 + 범위 차트 ---------- */
+function dotRange(id, metric) {
+  const W = 320, rowH = 38, top = 8, left = 70, right = 16, bottom = 30;
+  const H = top + rowH * MODELS.length + bottom;
+  const vals = MODELS.flatMap((m) => {
+    const v = DATA.models[m.key][metric];
+    return [v.mean - v.std, v.mean + v.std];
+  });
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  if (metric !== "r2") lo = 0;
+  const ticks = niceTicks(lo, hi, 4);
+  lo = ticks[0]; hi = ticks[ticks.length - 1];
+  const x = (v) => left + ((v - lo) / (hi - lo)) * (W - left - right);
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `${METRICS[metric].label} 모델별 비교` });
+  ticks.forEach((t) => {
+    el("line", { x1: x(t), x2: x(t), y1: top, y2: H - bottom, stroke: css("--grid"), "stroke-width": 1 }, svg);
+    txt(svg, x(t), H - bottom + 16, metric === "r2" ? fmt(t, 2) : t, { "text-anchor": "middle", fill: css("--muted"), class: "num" });
+  });
+  MODELS.forEach((m, i) => {
+    const d = DATA.models[m.key][metric];
+    const cy = top + rowH * i + rowH / 2;
+    txt(svg, left - 10, cy + 4, m.name, { "text-anchor": "end", fill: css("--ink"), "font-size": 12 });
+    el("line", { x1: x(d.mean - d.std), x2: x(d.mean + d.std), y1: cy, y2: cy, stroke: css(m.color), "stroke-width": 2, "stroke-linecap": "round", opacity: 0.55 }, svg);
+    el("circle", { cx: x(d.mean), cy, r: 6, fill: css(m.color), stroke: css("--surface"), "stroke-width": 2 }, svg);
+    const hit = el("rect", { x: left, y: cy - rowH / 2, width: W - left - right, height: rowH, fill: "transparent", class: "hit" }, svg);
+    bindTip(hit, () => `<b>${m.name}</b> · ${METRICS[metric].label}<br>평균 <span class="num">${fmt(d.mean, METRICS[metric].digits)}</span> ± <span class="num">${fmt(d.std, METRICS[metric].digits)}</span><br>9번 중 범위 <span class="num">${fmt(d.min, METRICS[metric].digits)} ~ ${fmt(d.max, METRICS[metric].digits)}</span>`);
+  });
+  el("line", { x1: left, x2: W - right, y1: H - bottom, y2: H - bottom, stroke: css("--axis"), "stroke-width": 1 }, svg);
+  const host = document.getElementById(id);
+  host.innerHTML = "";
+  host.appendChild(svg);
+}
+
+/* ---------- 지표 선택 버튼 ---------- */
+function segmented(id, options, initial, onChange) {
+  const host = document.getElementById(id);
+  host.innerHTML = options.map((o) => `<button type="button" data-v="${o}" aria-pressed="${o === initial}">${METRICS[o].label}</button>`).join("");
+  host.addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    host.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", x === b));
+    onChange(b.dataset.v);
+  });
+}
+
+/* ---------- fold별 묶음 막대 ---------- */
+function foldChart(metric) {
+  const W = 760, H = 300, top = 16, left = 56, right = 16, bottom = 48;
+  const all = MODELS.flatMap((m) => FOLDS.map((f) => DATA.models[m.key].folds[f.key][metric]));
+  let lo = metric === "r2" ? Math.min(...all) - 0.01 : 0;
+  const ticks = niceTicks(lo, Math.max(...all), 5);
+  lo = ticks[0];
+  const hi = ticks[ticks.length - 1];
+  const y = (v) => top + (1 - (v - lo) / (hi - lo)) * (H - top - bottom);
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `fold별 ${METRICS[metric].label}` });
+  ticks.forEach((t) => {
+    el("line", { x1: left, x2: W - right, y1: y(t), y2: y(t), stroke: css("--grid"), "stroke-width": 1 }, svg);
+    txt(svg, left - 8, y(t) + 4, metric === "r2" ? fmt(t, 2) : t, { "text-anchor": "end", fill: css("--muted"), class: "num" });
+  });
+  const groupW = (W - left - right) / FOLDS.length;
+  const barW = Math.min(44, (groupW * 0.62) / MODELS.length);
+  const gap = 2;
+  FOLDS.forEach((f, gi) => {
+    const gx = left + groupW * gi + groupW / 2;
+    const totalW = MODELS.length * barW + (MODELS.length - 1) * gap;
+    MODELS.forEach((m, mi) => {
+      const v = DATA.models[m.key].folds[f.key][metric];
+      const bx = gx - totalW / 2 + mi * (barW + gap);
+      const by = y(v), bh = y(lo) - by;
+      const r = Math.min(4, bh);
+      el("path", { d: `M${bx},${y(lo)} V${by + r} Q${bx},${by} ${bx + r},${by} H${bx + barW - r} Q${bx + barW},${by} ${bx + barW},${by + r} V${y(lo)} Z`, fill: css(m.color) }, svg);
+      const hit = el("rect", { x: bx - 1, y: top, width: barW + 2, height: H - top - bottom, fill: "transparent", class: "hit" }, svg);
+      const fd = DATA.models[m.key].folds[f.key];
+      bindTip(hit, () => `<b>${m.name}</b> · ${f.name} (${f.period})<br>MSE <span class="num">${fmt(fd.mse, 1)}</span> · RMSE <span class="num">${fmt(fd.rmse, 2)}</span><br>R² <span class="num">${fmt(fd.r2, 3)}</span> · MAE <span class="num">${fmt(fd.mae, 2)}</span>`);
+    });
+    txt(svg, gx, H - bottom + 18, f.name, { "text-anchor": "middle", fill: css("--ink"), "font-size": 12, "font-weight": 600 });
+    txt(svg, gx, H - bottom + 34, f.period, { "text-anchor": "middle", fill: css("--muted"), "font-size": 11 });
+  });
+  el("line", { x1: left, x2: W - right, y1: y(lo), y2: y(lo), stroke: css("--axis"), "stroke-width": 1 }, svg);
+  const host = document.getElementById("c-fold");
+  host.innerHTML = "";
+  host.appendChild(svg);
+}
+function foldTable() {
+  let h = `<thead><tr><th>모델</th><th>fold</th><th class="n">MSE</th><th class="n">RMSE</th><th class="n">R²</th><th class="n">MAE</th></tr></thead><tbody>`;
+  MODELS.forEach((m) => FOLDS.forEach((f) => {
+    const d = DATA.models[m.key].folds[f.key];
+    h += `<tr><td>${m.name}</td><td>${f.name} <span class="sd">${f.period}</span></td><td class="n">${fmt(d.mse, 1)}</td><td class="n">${fmt(d.rmse, 2)}</td><td class="n">${fmt(d.r2, 3)}</td><td class="n">${fmt(d.mae, 2)}</td></tr>`;
+  }));
+  document.getElementById("fold-table").innerHTML = h + "</tbody>";
+}
+
+/* ---------- lookback 선 차트 ---------- */
+function lookbackChart(metric) {
+  const W = 760, H = 300, top = 16, left = 56, right = 24, bottom = 40;
+  const LBS = [24, 48, 72, 168];
+  const all = MODELS.flatMap((m) => DATA.models[m.key].lookback.map((d) => d[metric]));
+  const pad = (Math.max(...all) - Math.min(...all)) * 0.08;
+  const ticks = niceTicks(Math.min(...all) - pad, Math.max(...all) + pad, 5);
+  const lo = ticks[0], hi = ticks[ticks.length - 1];
+  const x = (i) => left + 30 + (i / (LBS.length - 1)) * (W - left - right - 60);
+  const y = (v) => top + (1 - (v - lo) / (hi - lo)) * (H - top - bottom);
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `lookback별 ${METRICS[metric].label}` });
+  ticks.forEach((t) => {
+    el("line", { x1: left, x2: W - right, y1: y(t), y2: y(t), stroke: css("--grid"), "stroke-width": 1 }, svg);
+    txt(svg, left - 8, y(t) + 4, metric === "r2" ? fmt(t, 3) : t, { "text-anchor": "end", fill: css("--muted"), class: "num" });
+  });
+  LBS.forEach((lb, i) => txt(svg, x(i), H - bottom + 20, lb === 168 ? "168시간 (1주)" : `${lb}시간`, { "text-anchor": "middle", fill: css("--ink-2"), "font-size": 12 }));
+  el("line", { x1: left, x2: W - right, y1: H - bottom, y2: H - bottom, stroke: css("--axis"), "stroke-width": 1 }, svg);
+  MODELS.forEach((m) => {
+    const pts = DATA.models[m.key].lookback;
+    const chosen = DATA.models[m.key].params.lookback;
+    el("path", { d: pts.map((p, i) => `${i ? "L" : "M"}${x(i)},${y(p[metric])}`).join(" "), fill: "none", stroke: css(m.color), "stroke-width": 2, "stroke-linejoin": "round" }, svg);
+    pts.forEach((p, i) => {
+      if (p.lookback === chosen) el("circle", { cx: x(i), cy: y(p[metric]), r: 9.5, fill: "none", stroke: css(m.color), "stroke-width": 1.5 }, svg);
+      el("circle", { cx: x(i), cy: y(p[metric]), r: 5, fill: css(m.color), stroke: css("--surface"), "stroke-width": 2 }, svg);
+    });
+    const last = pts[pts.length - 1];
+    txt(svg, x(LBS.length - 1) + 14, y(last[metric]) + 4, m.name, { fill: css("--ink-2"), "font-size": 11.5 });
+  });
+  LBS.forEach((lb, i) => {
+    const hit = el("rect", { x: x(i) - 40, y: top, width: 80, height: H - top - bottom, fill: "transparent", class: "hit" }, svg);
+    bindTip(hit, () => `<b>lookback ${lb}시간</b><br>` + MODELS.map((m) => {
+      const p = DATA.models[m.key].lookback[i];
+      return `${m.name}: <span class="num">${fmt(p[metric], METRICS[metric].digits)}</span>${DATA.models[m.key].params.lookback === lb ? " (선택)" : ""}`;
+    }).join("<br>"));
+  });
+  const host = document.getElementById("c-lb");
+  host.innerHTML = "";
+  host.appendChild(svg);
+}
+
+/* ---------- 단계별 선택 표 ---------- */
+const STAGE_DESC = {
+  lstm: ["lookback", "units · 층 수", "lr · dropout", "batch", "seed 3개 재확인"],
+  tcn: ["lookback", "filters · kernel · dilation", "lr · dropout", "batch", "seed 3개 재확인"],
+  tcn_lstm: ["lookback", "filters · kernel · LSTM units", "lr · dropout", "batch", "seed 3개 재확인"],
+};
+function stageTables() {
+  const host = document.getElementById("stages");
+  host.innerHTML = MODELS.map((m) => {
+    const prog = DATA.models[m.key].progress;
+    let prev = null;
+    const rows = prog.map((s, i) => {
+      const changed = prev ? Object.keys(s.params).filter((k) => s.params[k] !== prev[k]) : Object.keys(s.params).filter((k) => k === "lookback");
+      prev = s.params;
+      const what = changed.length
+        ? changed.map((k) => `${PARAM_LABEL[k]} → <b>${k === "dilations" ? (s.params[k] === "auto+1" ? "자동+1단계" : "자동") : s.params[k]}</b>`).join(", ")
+        : '<span class="sd">앞 단계와 같음</span>';
+      return `<tr><td>${s.stage}</td><td>${STAGE_DESC[m.key][i]}</td><td>${what}</td><td class="n">${fmt(s.mse, 1)}</td><td class="n">${fmt(s.rmse, 2)}</td><td class="n">${fmt(s.r2, 3)}</td></tr>`;
+    }).join("");
+    return `<div class="panel"><h3 style="margin-bottom:10px"><span class="swatch" style="background:${css(m.color)}"></span>${m.name} <span class="sd">· 학습 ${DATA.models[m.key].runs}회</span></h3><div class="table-scroll"><table><thead><tr><th>단계</th><th>탐색한 것</th><th>선택 결과</th><th class="n">MSE</th><th class="n">RMSE</th><th class="n">R²</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  }).join("");
+}
+
+/* ---------- 실행 ---------- */
+summaryTable();
+legend("legend-1"); legend("legend-2"); legend("legend-3");
+dotRange("c-mse", "mse"); dotRange("c-rmse", "rmse"); dotRange("c-r2", "r2");
+segmented("seg-fold", ["rmse", "mse", "r2"], "rmse", foldChart); foldChart("rmse"); foldTable();
+segmented("seg-lb", ["rmse", "mse", "r2"], "rmse", lookbackChart); lookbackChart("rmse");
+stageTables();
+document.getElementById("w-tcn").textContent = DATA.weights.tcn.toFixed(3);
+document.getElementById("w-lstm").textContent = DATA.weights.lstm.toFixed(3);
+window.addEventListener("scroll", hideTip, { passive: true });
+</script>
+</body>
+</html>
