@@ -9,6 +9,7 @@ import pandas as pd
 def build_chapters(root: Path, scores: pd.DataFrame):
     evidence = root / "report/evidence"
     audit = json.loads((evidence / "data_diagnostics.json").read_text(encoding="utf-8"))
+    eda = json.loads((evidence / "eda_summary.json").read_text(encoding="utf-8"))
     grid = pd.read_csv(evidence / "grid_search_summary.csv", encoding="utf-8-sig")
     importance = pd.read_csv(evidence / "grouped_permutation_importance.csv", encoding="utf-8-sig")
     interaction = pd.read_csv(evidence / "production_time_interaction.csv", encoding="utf-8-sig")
@@ -40,12 +41,15 @@ def build_chapters(root: Path, scores: pd.DataFrame):
         [
             "◦ 1.1 제조 데이터와 예측 과제",
             "- 관측 단위는 공장 전체의 시간별 제조공정 기록이다. 2021년 1월 1일~9월 14일 총 6,168시간에 대해 생산량, 기상, 인력 및 15·30·45·60분 전력 계측을 시간 키로 연결한다. 네 전력 계측의 실수 평균을 다음 시간의 예측 목표(kW)로 정의하였다.",
+            "- 일별 평균 전력과 생산량을 함께 그려 1~9월 조업 수준의 변동을 살폈다. 생산량이 낮은 날에도 전력 소비가 이어지는 구간과 8월 말 셧다운 구간을 구분하여 해석했다.",
             "- 과거 전력은 설비 부하의 연속성, 생산량은 작업 강도, 기온·풍속·습도·강수량은 외부 조건, 시간 주기와 주말 구분은 조업 일정을 설명한다. 공장 단위 집계에서 생산 활동과 전력 사용 패턴을 함께 파악해 피크 사전경보에 연결하였다.",
             "◦ 1.2 결측·중복·시간 이상 진단과 정제",
             f"- 원본 {audit['raw_rows']:,}행·{audit['raw_columns']}열에서 풍속 {audit['raw_missing']['풍속']}건, 강수량 {audit['raw_missing']['강수량']}건, 공장인원 {audit['raw_missing']['공장인원']}건의 결측과 시간 표기 이상 {audit['restored_hours']}건을 확인하였다. 완전 중복 행과 중복 시각은 각각 {audit['duplicate_raw_rows']}건이었다.",
             f"- 시간 표기를 날짜·요일과 연속성에 맞춰 복원하고 원래 값과 복원 여부를 함께 기록했다. 공장인원 결측은 0으로, 풍속·강수량은 시간 순서의 선형보간으로 보정하였다. 네 계측값으로 전력 실수 평균을 재계산하고 공장 셧다운 {audit['shutdown_hours']}시간을 표기했다. 정제 후 {audit['clean_rows']:,}행·{audit['clean_columns']}열의 결측은 {audit['clean_missing']}건이다.",
+            f"- 원본 결측 위치와 셧다운 전후 전력 추이를 확인했다. 셧다운을 제외한 생산량 0인 {eda['idle_hours']:,}시간의 평균 전력은 {eda['idle_mean_kw']:.1f} kW였다. 따라서 생산 중단과 공장 셧다운의 전력 상태를 구분해 진단했다.",
             "◦ 1.3 입력과 피크 불균형",
             "- 공통 입력은 과거 전력_평균_실수, 생산량, 기온, 풍속, 습도, 강수량, 시간_sin, 시간_cos, 주말여부의 9개다. 시간_sin·cos와 주말여부는 날짜·시간에서 동일한 규칙으로 생성한다. 모든 모델에 동일한 변수 정의와 시각 경계를 적용하였다.",
+            f"- 요일×시간 평균 전력에서는 평일 11시 {eda['weekday_11_kw']:.1f} kW에서 12시 {eda['weekday_12_kw']:.1f} kW로 낮아지는 조업 리듬이 나타났다. 생산량과 전력의 산점도에서는 무생산 대기 부하와 높은 생산량의 고부하를 함께 확인했다. 전력의 1시간·168시간 시차 상관은 각각 {eda['lag_correlations']['1']:.3f}·{eda['lag_correlations']['168']:.3f}으로, 짧은 연속성과 주간 반복성이 입력 길이 비교의 근거가 되었다.",
             f"- 학습 기간의 높은 전력 구간을 기준으로 피크를 177 kW 이상으로 고정했다. 최종 Test의 유효한 {audit['test_hours']}시간 중 피크는 {audit['test_peaks']}시간({audit['test_peak_rate']:.1%})으로 소수 사례다. 따라서 전체 전력 오차와 함께 피크 F1·재현율·오경보를 별도로 평가하였다.",
             "◦ 1.4 시계열 검증 설계",
             "- 검증은 5월 16일~6월 15일, 6월 16일~7월 15일, 7월 16일~8월 15일의 확장형 3개 fold로 구성했다. 각 검증 시작 직전 14일은 조기 종료 판단 구간으로 두고 이전 기간으로 학습했다. 최종 Test는 8월 16일~9월 14일에 고정하여 탐색과 분리하였다.",
@@ -105,7 +109,7 @@ def build_chapters(root: Path, scores: pd.DataFrame):
             "- Python 환경은 requirements-tree.txt와 requirements-report.txt에 명시했다. seed 42, 데이터 해시, 9개 변수 목록, 피크 기준, 후보 선택 규칙을 results/base9_tree/manifest.json에 기록했다.",
             "◦ 6.2 전처리부터 제출물 생성까지",
             "- python scripts/verify_cleaned_data.py 는 원본 6,168행에서 정제 결과를 다시 만들고 제공 CSV의 모든 열과 비교한다. python scripts/train_base9_trees.py --models lightgbm xgboost 는 두 트리의 108개×3 fold 결과와 선택 모델을 생성한다.",
-            "- python scripts/build_base9_comparison.py 는 5개 모델의 Test 시각·실측값 일치와 트리 전체 탐색 완료를 검사한다. 이어서 build_report_evidence.py, analyze_feature_importance.py, make_report_figures.py, fill_result_report.py, verify_report.py 순으로 진단표·시각화·HWPX를 생성하고 확인한다. capture_dashboard.py는 실제 Dash 화면을 촬영해 보고서 그림으로 저장한다.",
+            "- python scripts/build_base9_comparison.py 는 5개 모델의 Test 시각·실측값 일치와 트리 전체 탐색 완료를 검사한다. 이어서 build_report_evidence.py, analyze_feature_importance.py, build_eda_evidence.py, make_report_figures.py, fill_result_report.py, verify_report.py 순으로 진단표·시각화·HWPX를 생성하고 확인한다. capture_dashboard.py는 실제 Dash 화면을 촬영해 보고서 그림으로 저장한다.",
             "- python scripts/reproduce_submission.py 명령으로 정제 검증, 결과 비교, 근거표·시각화·HWPX 생성 및 파일 검증을 연속 실행한다. --train-trees 옵션으로 두 트리의 탐색과 재학습을 포함하고, --capture-dashboard 옵션으로 실제 화면 캡처를 갱신한다. 후보별 설정과 fold 결과 CSV, Test 예측, 모델 파일을 함께 보관해 선택 과정을 추적할 수 있다.",
         ],
     ]

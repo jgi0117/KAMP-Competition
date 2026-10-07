@@ -139,32 +139,41 @@ def fill():
         headings = [1, 8, 16, 24, 32, 40]
         new_children = [cover]
         figures = [
-            (0, "04_data_profile.png", "그림 1. 평일과 주말의 시간별 평균 전력 패턴"),
-            (1, "05_grid_search.png", "그림 2. 신경망 단계별 탐색과 트리 모델 108개 조합의 검증 결과"),
-            (1, "01_model_comparison.png", "그림 3. 다섯 후보의 동일 Test 구간 RMSE 및 피크 경보 F1"),
-            (2, "06_feature_interaction.png", "그림 4. 변수 묶음 중요도와 생산량·조업 시간의 교차 분석"),
-            (2, "07_error_conditions.png", "그림 5. 시간대별 오경보 및 미탐지 집중 구간"),
-            (2, "02_peak_timeline.png", "그림 6. 피크 집중 기간의 실측·앙상블 예측·경보"),
-            (3, "03_dashboard.png", "그림 7. Test 예측을 표시한 Dash 대시보드 화면"),
+            (0, 2, "08_eda_overview.png", "그림 1. 일별 평균 전력과 생산량의 동시 변화"),
+            (0, 6, "09_eda_quality.png", "그림 2. 원본 결측과 셧다운 전후 전력 진단"),
+            (0, 10, "10_eda_heatmap.png", "그림 3. 요일·시간별 평균 전력 열지도"),
+            (0, 10, "11_eda_operating_modes.png", "그림 4. 생산량과 전력 부하·대기 부하 분포"),
+            (0, 10, "04_data_profile.png", "그림 5. 평일과 주말의 시간별 평균 전력 패턴"),
+            (1, 7, "05_grid_search.png", "그림 6. 신경망 단계별 탐색과 트리 전체 조합의 검증 결과"),
+            (1, 12, "12_grid_selection_table.png", "표 1. 모델별 탐색 후보·fold 결과와 최종 선택"),
+            (1, 15, "13_test_metrics_table.png", "표 2. 동일 Test 703시간의 다섯 모델 성능"),
+            (1, 15, "01_model_comparison.png", "그림 7. 다섯 후보의 RMSE와 피크 경보 F1"),
+            (2, 4, "06_feature_interaction.png", "그림 8. 변수 묶음 중요도와 생산량·조업 시간의 교차 분석"),
+            (2, 8, "07_error_conditions.png", "그림 9. 시간대별 오경보 및 미탐지 집중 구간"),
+            (2, 7, "02_peak_timeline.png", "그림 10. 피크 집중 기간의 실측·예측·경보"),
+            (3, 5, "03_dashboard.png", "그림 11. Test 예측을 표시한 Dash 대시보드 화면"),
         ]
+        def add_figures(chapter, line_index):
+            for number, (target, target_index, filename, caption) in enumerate(figures, start=1):
+                if target != chapter or target_index != line_index:
+                    continue
+                path = ROOT / "report/figures" / filename
+                if not path.exists():
+                    raise FileNotFoundError(f"Generate report figures first: {path}")
+                caption_p = paragraph(bullet, caption)
+                caption_p.find(f"{{{HP}}}run").set("charPrIDRef", "38")
+                caption_p.set("pageBreak", "1")
+                new_children.append(caption_p)
+                new_children.append(picture_paragraph(children[position + 2], original_pic,
+                                                       f"report_image{number}", path, number))
         for n, position in enumerate(headings):
             heading = children[position]
             heading.set("pageBreak", "1")
             new_children.append(heading)
             bullet = children[position + 1]
-            for line in chapters[n]:
+            for line_index, line in enumerate(chapters[n]):
                 new_children.append(paragraph(bullet, line))
-            for number, (chapter, filename, caption) in enumerate(figures, start=1):
-                if chapter != n:
-                    continue
-                path = ROOT / "report/figures" / filename
-                if not path.exists():
-                    raise FileNotFoundError(f"Generate report figures first: {path}")
-                new_children.append(paragraph(bullet, caption))
-                new_children[-1].find(f"{{{HP}}}run").set("charPrIDRef", "38")
-                new_children[-1].set("pageBreak", "1")
-                new_children.append(picture_paragraph(children[position + 2], original_pic,
-                                                       f"report_image{number}", path, number))
+                add_figures(n, line_index)
         # Keep the form's mandatory survey section. The submission owner must
         # replace the example image with their own completion screenshot.
         new_children.extend(children[58:])
@@ -179,7 +188,7 @@ def fill():
             for segments in paragraph_node.findall(f"{{{HP}}}linesegarray"):
                 paragraph_node.remove(segments)
         manifest = package.find(f"{{{OPF}}}manifest")
-        for n, (_, filename, _) in enumerate(figures, start=1):
+        for n, (_, _, filename, _) in enumerate(figures, start=1):
             etree.SubElement(manifest, f"{{{OPF}}}item", id=f"report_image{n}",
                              href=f"BinData/{filename}", **{"media-type": "image/png", "isEmbeded": "1"})
         OUTPUT.parent.mkdir(parents=True, exist_ok=True)
@@ -196,22 +205,23 @@ def fill():
                 else:
                     payload = source.read(item.filename)
                 target.writestr(item, payload)
-            for _, filename, _ in figures:
+            for _, _, filename, _ in figures:
                 target.write(ROOT / "report/figures" / filename, f"BinData/{filename}")
         review = ["# OKM 제조공정 전력 피크 예측: 심사기준별 결과보고서", ""]
         for number, (position, chapter) in enumerate(zip(headings, chapters), start=1):
             review.extend([f"## {text_of(children[position])}", ""])
-            for line in chapter:
+            for line_index, line in enumerate(chapter):
                 review.extend([line, ""])
-            for _, filename, caption in (figure for figure in figures if figure[0] == number - 1):
-                review.extend([caption, "", f"![{caption}](figures/{filename})", ""])
+                for target, target_index, filename, caption in figures:
+                    if target == number - 1 and target_index == line_index:
+                        review.extend([caption, "", f"![{caption}](figures/{filename})", ""])
         (OUTPUT.parent / "심사기준별_상세내용.md").write_text("\n".join(review), encoding="utf-8")
     with zipfile.ZipFile(OUTPUT) as check:
         assert check.testzip() is None
         finished = etree.fromstring(check.read("Contents/section0.xml"))
         plain = " ".join(finished.xpath(".//hp:t/text()", namespaces=NS))
         assert "8.67 kW" in plain and "108개 조합" in plain and "작성 요령" not in plain
-        assert len([x for x in finished.iter() if etree.QName(x).localname == "pic"]) == 8
+        assert len([x for x in finished.iter() if etree.QName(x).localname == "pic"]) == 14
         assert not any(etree.QName(x).localname == "linesegarray" for x in finished.iter())
     print(OUTPUT)
 

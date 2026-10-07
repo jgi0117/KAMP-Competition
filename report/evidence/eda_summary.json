@@ -1,0 +1,21 @@
+{
+  "raw_rows": 6168,
+  "clean_rows": 6168,
+  "raw_missing": {
+    "공장인원": 17,
+    "풍속": 3,
+    "강수량": 1
+  },
+  "clean_missing": 0,
+  "restored_hours": 48,
+  "shutdown_hours": 17,
+  "idle_hours": 2640,
+  "idle_mean_kw": 46.392329545454544,
+  "weekday_11_kw": 151.72267759562843,
+  "weekday_12_kw": 94.43579234972678,
+  "lag_correlations": {
+    "1": 0.900881705142203,
+    "24": 0.3749113671479195,
+    "168": 0.7397308558107497
+  }
+}

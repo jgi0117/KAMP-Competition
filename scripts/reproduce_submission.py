@@ -31,6 +31,7 @@ def main() -> None:
     run("build_base9_comparison.py")
     run("build_report_evidence.py")
     run("analyze_feature_importance.py")
+    run("build_eda_evidence.py")
     run("make_report_figures.py")
     if args.capture_dashboard:
         run("capture_dashboard.py")

@@ -11,7 +11,7 @@ python dashboard/app.py
 
 대시보드 실행 전 `python -m pip install -r dashboard/requirements.txt`가 필요합니다. 대시보드는 저장된 Test 703시간을 재생하며 실시간 예측을 수행하지 않습니다.
 
-결과보고서의 근거표, 시각화 7개, HWPX와 검증을 한 명령으로 실행합니다. 저장된 대시보드 화면을 갱신할 때는 Playwright Chromium을 설치하고 `--capture-dashboard`를 붙입니다.
+결과보고서의 근거표, EDA·모델 평가 시각화 13개, HWPX와 검증을 한 명령으로 실행합니다. 저장된 대시보드 화면을 갱신할 때는 Playwright Chromium을 설치하고 `--capture-dashboard`를 붙입니다.
 
 ```powershell
 python -m pip install -r requirements-submission.txt
@@ -55,6 +55,7 @@ python neural/final_evaluate.py --models lstm tcn
 | `data/okm_cleaned_2021.csv` | 학습에 사용한 KJH 정제 자료 |
 | `data/okm_augumented_2021.csv` | 전처리 재현용 원본 |
 | `src/preprocessing.py` | KJH 데이터 정제 코드 |
+| `notebooks/kjh/` | KJH 대시보드 브랜치의 데이터 이해·전처리 EDA 노트북을 현재 자료 경로에 맞춰 정리 |
 | `model_search/` | LSTM·TCN·XGBoost·LightGBM별 탐색 범위 |
 | `neural/core/` | 9개 입력의 시간순 분할·평가와 LSTM·TCN 구현 |
 | `neural/grid_search.py`, `neural/final_evaluate.py` | 신경망 탐색·최종 평가와 앙상블 |
@@ -63,7 +64,7 @@ python neural/final_evaluate.py --models lstm tcn
 | `results/base9_tree/` | 전체 트리 그리드, 선택 모델, 예측, 지표 |
 | `results/base9_comparison.csv` | 동일 Test 구간의 다섯 후보 비교 |
 | `dashboard/` | 저장된 Test 예측 시각화 |
-| `presentation/` | 원본 발표 PPT |
+| `presentation/` | 전력 피크 예측 발표 PPT와 EDA·전처리 발표 PPT |
 | `docs/` | 원본 HWPX 결과보고서 양식 |
 | `report/` | 원본 양식을 유지한 HWPX 작성본과 삽입한 그래프·대시보드 스크린샷 |
 | `scripts/reproduce_submission.py` | 정제 검증부터 보고서 파일 검증까지 실행 |

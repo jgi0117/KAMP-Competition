@@ -1,6 +1,7 @@
 """Create publication-ready charts directly from the held-out result files."""
 
 from pathlib import Path
+import json
 import sys
 
 import matplotlib
@@ -170,6 +171,65 @@ def error_conditions_chart():
     plt.close(fig)
 
 
+def _table_figure(rows, headers, title, filename, highlight=None):
+    fig, ax = plt.subplots(figsize=(11.2, 3.5), constrained_layout=True)
+    ax.axis("off")
+    ax.set_title(title, loc="left", fontsize=15, weight="bold", pad=17)
+    table = ax.table(cellText=rows, colLabels=headers, cellLoc="center",
+                     bbox=[0, .05, 1, .85])
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    for (row, col), cell in table.get_celld().items():
+        cell.set_edgecolor("#e2e8f0")
+        cell.set_linewidth(.8)
+        if row == 0:
+            cell.set_facecolor("#172554")
+            cell.get_text().set_color("white")
+            cell.get_text().set_weight("bold")
+        elif row == highlight:
+            cell.set_facecolor("#ccfbf1")
+            cell.get_text().set_weight("bold")
+        else:
+            cell.set_facecolor("#f8fafc" if row % 2 == 0 else "white")
+    fig.savefig(OUT / filename, dpi=180, bbox_inches="tight")
+    plt.close(fig)
+
+
+def grid_selection_table():
+    grid = pd.read_csv(ROOT / "report/evidence/grid_search_summary.csv", encoding="utf-8-sig")
+    rows = []
+    for model in ("lstm", "tcn", "xgboost", "lightgbm"):
+        selected = grid.loc[grid.model.eq(model)].iloc[-1]
+        if model in ("lstm", "tcn"):
+            all_folds = pd.read_csv(ROOT / f"neural/results/grid_search/{model}.csv")
+            candidates, folds = all_folds.config_id.nunique(), len(all_folds)
+        else:
+            candidates, folds = int(selected.completed_candidates), int(selected.fold_results)
+        params = json.loads(selected.selected_params)
+        if model == "lstm":
+            setting = f"{params['lookback']}h · {params['hidden_units']}유닛 · {params['num_layers']}층"
+        elif model == "tcn":
+            setting = f"{params['lookback']}h · {params['filters']}필터 · 커널 {params['kernel_size']}"
+        else:
+            setting = f"트리 {params['n_estimators']} · 학습률 {params['learning_rate']}"
+        rows.append([LABELS[model], str(candidates), str(folds),
+                     f"{selected.validation_rmse:.2f}",
+                     f"{selected.validation_peak_mae:.2f}", setting])
+    _table_figure(rows, ["모델", "고유 후보", "fold 결과", "검증 RMSE", "피크 MAE", "선택 설정"],
+                  "3개 시간순 fold의 전체 탐색과 최종 선택", "12_grid_selection_table.png")
+
+
+def test_metrics_table(comparison):
+    rows = []
+    for row in comparison.itertuples():
+        rows.append([LABELS[row.model], f"{row.rmse:.2f}", f"{row.mae:.2f}",
+                     f"{row.alert_f1:.3f}", f"{row.alert_recall:.1%}",
+                     str(row.fn), str(row.fp)])
+    _table_figure(rows, ["모델", "RMSE kW", "MAE kW", "피크 F1", "재현율", "미탐지", "오경보"],
+                  "동일 Test 703시간 · 177 kW 피크 경보 성능", "13_test_metrics_table.png",
+                  highlight=3)
+
+
 def main():
     setup()
     comparison, test, _, _ = load_evidence()
@@ -179,6 +239,8 @@ def main():
     grid_search_chart()
     feature_interaction_chart()
     error_conditions_chart()
+    grid_selection_table()
+    test_metrics_table(comparison)
     print("\n".join(str(path) for path in sorted(OUT.glob("*.png"))))
 
 

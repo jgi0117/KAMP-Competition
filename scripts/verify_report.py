@@ -31,8 +31,8 @@ def main():
                      if etree.QName(node).localname == "img"}
         items = {node.get("id"): node.get("href") for node in manifest.iter()
                  if etree.QName(node).localname == "item"}
-        if len(image_ids) != 8 or not image_ids <= items.keys():
-            raise ValueError("Expected seven report figures plus the form image")
+        if len(image_ids) != 14 or not image_ids <= items.keys():
+            raise ValueError("Expected thirteen report figures plus the form image")
         for ident in image_ids:
             with Image.open(BytesIO(package.read(items[ident]))) as image:
                 image.verify()
