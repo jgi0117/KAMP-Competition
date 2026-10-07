@@ -26,7 +26,7 @@
 
 전체 6,000개 window 중 셧다운 Target 17개를 제외하여 5,983개를 사용합니다.
 
-하이퍼파라미터 탐색은 다음 세 개의 expanding fold를 사용합니다. 각 평가 구간 직전 14일은 early stopping 전용이며 평가 점수 계산에 섞지 않습니다.
+XGBoost와 LightGBM의 하이퍼파라미터 탐색은 다음 세 개의 expanding fold를 사용합니다. 각 평가 구간 직전 14일은 시간 간격으로 남겨 평가 데이터가 학습에 섞이지 않도록 합니다.
 
 | Fold | train | early stopping | 평가 | 표본 수(train / early stopping / 평가) |
 |---|---|---|---|---:|
@@ -51,6 +51,14 @@ conda activate kamp-competition
 python run_models.py --data data/okm_augumented_2021.csv --output outputs/experiment_01
 ```
 
+트리 모델이 이미 끝난 실행을 중단했다면 같은 출력 폴더에서 Transformer만 이어서 실행할 수 있습니다. 기존 `comparison.csv`의 XGBoost·LightGBM 행은 유지되며 Transformer 결과가 모델별로 완료될 때마다 추가 저장됩니다.
+
+```powershell
+python run_models.py --data outputs/full_experiment/prepared/model_input_lhs.npz `
+  --models timesfm3 chronos2 moirai2 `
+  --output outputs/full_experiment
+```
+
 전처리와 공통 분할 파일만 만들 수도 있습니다.
 
 ```powershell
@@ -70,7 +78,7 @@ python run_models.py --data outputs/prepared/model_input_lhs.npz `
 
 - XGBoost와 LightGBM은 문서의 전체 grid를 세 개의 LHS fold에서 평가하고 평균 RMSE가 가장 낮은 조합을 선택합니다.
 - TimesFM 3.0, Chronos-2, Moirai 2.0은 zero-shot과 fine-tuning 결과를 모두 생성합니다.
-- 사전학습 모델의 fine-tuning 범위는 F0~F7, 학습률은 `1e-6`, `1e-5`, `1e-4`이며 각 조합을 동일한 세 fold에서 비교합니다.
+- Transformer fine-tuning에는 K-fold를 사용하지 않습니다. 각 `F0~F7 × 학습률 [1e-6, 1e-5, 1e-4]` 조합을 train에서 한 번 학습하고 validation에서 early stopping과 모델 선택을 수행하므로 모델당 탐색은 24회입니다.
 - 유효 batch size는 32, 최대 optimizer step은 1,000, 검증 주기는 100 step, early stopping patience는 3입니다.
 - 최종 비교 지표는 RMSE, MAE, R²만 사용합니다.
 
@@ -80,7 +88,7 @@ python run_models.py --data outputs/prepared/model_input_lhs.npz `
 
 - `comparison.csv`: 모델별 RMSE, MAE, R²와 실행 시간
 - `search_results_xgboost.csv`, `search_results_lightgbm.csv`: fold별 grid 탐색 결과
-- `finetune_search_results_<model>.csv`: 사전학습 모델의 F0~F7, 학습률, fold 결과
+- `finetune_search_results_<model>.csv`: 사전학습 모델의 F0~F7 및 학습률별 holdout 결과
 - `predictions/<model>.csv`: 정답과 예측값
 - `models/`: 최종 모델 또는 fine-tuned checkpoint
 - `run_metadata.json`: 실행 환경, 데이터 크기, 장치, fine-tuning 조건
@@ -89,4 +97,4 @@ GPU를 사용할 수 있으면 자동으로 사용하고, 해당 라이브러리
 
 ## 터미널 진행 상태
 
-실행을 시작하면 선택된 장치, CUDA 연결 여부, GPU 이름, CUDA runtime과 VRAM이 먼저 출력됩니다. 학습 중에는 현재 모델 번호, tree grid의 후보·fold 진행률, foundation 모델의 F0~F7·학습률·fold 번호, optimizer step, 검증 RMSE와 경과 시간이 표시됩니다. 각 모델이 끝날 때 실제 사용 장치와 최종 RMSE도 출력됩니다.
+실행을 시작하면 선택된 장치, CUDA 연결 여부, GPU 이름, CUDA runtime과 VRAM이 먼저 출력됩니다. 학습 중에는 현재 모델 번호, tree grid의 후보·fold 진행률, foundation 모델의 F0~F7·학습률·holdout, optimizer step, 검증 RMSE와 경과 시간이 표시됩니다. 각 모델이 끝날 때 실제 사용 장치와 최종 RMSE도 출력됩니다.

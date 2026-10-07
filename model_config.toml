@@ -26,7 +26,9 @@ device = "auto"
 batch_size = 16
 
 [foundation.finetuning]
-# F0~F7 × 학습률 3개 × 시계열 3-fold = 사전학습 모델당 72회 학습
+# Transformer는 K-fold 없이 train/validation holdout 1회만 사용한다.
+# F0~F7 × 학습률 3개 = 사전학습 모델당 24회 학습
+cv_splits = 1
 scopes = ["F0", "F1", "F2", "F3", "F4", "F5", "F6", "F7"]
 learning_rates = [1e-6, 1e-5, 1e-4]
 effective_batch_size = 32

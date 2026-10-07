@@ -9,7 +9,7 @@ from kamp_models.finetuning import (
     apply_finetune_scope,
     train_torch_point_model,
 )
-from kamp_models.foundation_common import resolve_device
+from kamp_models.foundation_common import expanding_folds, resolve_device
 from kamp_models.metrics import regression_metrics
 from kamp_models.models.lightgbm import _build_estimator as build_lightgbm_estimator
 from kamp_models.models.lightgbm import _resolve_device as resolve_lightgbm_device
@@ -169,6 +169,32 @@ def test_finetune_settings_match_document_conditions():
     assert settings.validation_interval == 100
     assert settings.early_stopping_patience == 3
     assert settings.final_seed == 42
+
+
+def test_foundation_single_holdout_uses_train_and_validation_once():
+    def make_split(count):
+        values = np.arange(count * 4, dtype=np.float32).reshape(count, 4)
+        return DatasetSplit(
+            X=values,
+            y=values[:, :1],
+            target_history=values,
+        )
+
+    bundle = DatasetBundle(
+        train=make_split(6),
+        val=make_split(2),
+        test=make_split(1),
+        context_length=4,
+        horizon=1,
+    )
+
+    _, _, folds = expanding_folds(bundle, n_splits=1)
+
+    assert len(folds) == 1
+    assert folds[0].name == "holdout"
+    np.testing.assert_array_equal(folds[0].train, np.arange(6))
+    np.testing.assert_array_equal(folds[0].early_stop, np.array([6, 7]))
+    np.testing.assert_array_equal(folds[0].evaluate, np.array([6, 7]))
 
 
 def test_timesfm_scope_only_unfreezes_requested_tail_and_head():

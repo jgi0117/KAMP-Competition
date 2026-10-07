@@ -73,6 +73,8 @@ class FineTuneSettings:
         search_seed: int,
         quick: bool = False,
     ) -> "FineTuneSettings":
+        if cv_splits < 1:
+            raise ValueError("cv_splits must be at least 1")
         scopes = tuple(str(item).upper() for item in value.get("scopes", SCOPE_BLOCKS["chronos2"]))
         invalid = sorted(set(scopes) - set(SCOPE_BLOCKS["chronos2"]))
         if invalid:
@@ -93,7 +95,7 @@ class FineTuneSettings:
             max_steps=1 if quick else int(value.get("max_steps", 1000)),
             validation_interval=1 if quick else int(value.get("validation_interval", 100)),
             early_stopping_patience=1 if quick else int(value.get("early_stopping_patience", 3)),
-            cv_splits=max(2, min(cv_splits, 2)) if quick else cv_splits,
+            cv_splits=1 if quick else cv_splits,
             search_seed=search_seed,
             final_seed=search_seed if quick else int(value.get("final_seed", search_seed)),
         )

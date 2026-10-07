@@ -65,7 +65,23 @@ def expanding_folds(
     train_history, val_history, _ = histories(data)
     history = np.concatenate([train_history, val_history], axis=0)
     targets = np.concatenate([data.train.y, data.val.y], axis=0)
-    folds = get_temporal_folds(data, n_splits)
+    if n_splits == 1:
+        train_end = data.train.n_samples
+        validation = np.arange(
+            train_end,
+            train_end + data.val.n_samples,
+            dtype=np.int64,
+        )
+        folds = [
+            TemporalFold(
+                name="holdout",
+                train=np.arange(train_end, dtype=np.int64),
+                early_stop=validation,
+                evaluate=validation,
+            )
+        ]
+    else:
+        folds = get_temporal_folds(data, n_splits)
     return history, targets, folds
 
 

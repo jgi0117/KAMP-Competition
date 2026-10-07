@@ -72,6 +72,24 @@ def _base_row(model_name: str) -> dict[str, Any]:
     }
 
 
+def _base_model_name(model_name: str) -> str:
+    for suffix in ("_zs", "_ft"):
+        if model_name.endswith(suffix):
+            return model_name[: -len(suffix)]
+    return model_name
+
+
+def _save_comparison(rows: list[dict[str, Any]], destination: Path) -> pd.DataFrame:
+    comparison = pd.DataFrame(rows)
+    comparison = comparison.sort_values(
+        ["status", "rmse"], ascending=[False, True], na_position="last"
+    ).reset_index(drop=True)
+    comparison.to_csv(
+        destination / "comparison.csv", index=False, encoding="utf-8-sig"
+    )
+    return comparison
+
+
 def run_experiment(
     data_path: str | Path,
     output_dir: str | Path,
@@ -99,14 +117,31 @@ def run_experiment(
     device = resolve_device(str(foundation.get("device", "auto")))
     batch_size = int(foundation.get("batch_size", 16))
     tree_device = resolve_device(str(tree_config.get("device", "auto")))
+    finetuning_config = foundation.get("finetuning", {})
     finetune_settings = FineTuneSettings.from_config(
-        foundation.get("finetuning", {}),
-        cv_splits=int(experiment.get("cv_splits", 3)),
+        finetuning_config,
+        cv_splits=int(
+            finetuning_config.get(
+                "cv_splits", experiment.get("cv_splits", 3)
+            )
+        ),
         search_seed=int(experiment.get("seed", 42)),
         quick=quick,
     )
     continue_on_error = bool(experiment.get("continue_on_error", True))
+    comparison_path = destination / "comparison.csv"
     rows: list[dict[str, Any]] = []
+    if comparison_path.is_file():
+        previous = pd.read_csv(comparison_path).fillna("")
+        rows = [
+            dict(row)
+            for row in previous.to_dict(orient="records")
+            if _base_model_name(str(row["model"])) not in selected_models
+        ]
+        if rows:
+            log_progress(
+                f"Preserving {len(rows)} completed result row(s) from {comparison_path}"
+            )
 
     log_progress(
         "Run started | "
@@ -214,6 +249,7 @@ def run_experiment(
                         variant.predictions,
                     )
                     rows.append(variant_row)
+                _save_comparison(rows, destination)
                 log_progress(
                     f"Model {model_name} completed | device={device} | "
                     f"elapsed={time.perf_counter() - model_started:.1f}s"
@@ -245,12 +281,9 @@ def run_experiment(
                 f"RMSE={row['rmse']:.4f} | elapsed={time.perf_counter() - model_started:.1f}s"
             )
         rows.append(row)
+        _save_comparison(rows, destination)
 
-    comparison = pd.DataFrame(rows)
-    comparison = comparison.sort_values(
-        ["status", "rmse"], ascending=[False, True], na_position="last"
-    ).reset_index(drop=True)
-    comparison.to_csv(destination / "comparison.csv", index=False, encoding="utf-8-sig")
+    comparison = _save_comparison(rows, destination)
 
     metadata = {
         "created_unix": time.time(),
