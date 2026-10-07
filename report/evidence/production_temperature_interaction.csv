@@ -1,0 +1,5 @@
+﻿hot,high_production,hours,peaks,peak_rate
+False,False,510,20,0.0392156862745098
+False,True,153,23,0.1503267973856209
+True,False,27,4,0.14814814814814814
+True,True,13,2,0.15384615384615385

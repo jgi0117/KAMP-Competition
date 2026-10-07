@@ -1,0 +1,2 @@
+﻿datetime,actual,pred_ensemble_seed42,prob_ensemble_seed42,previous_production,previous_temperature,hour
+2021-08-23 15:00:00,179.5,167.91388543010663,0.1917958299541748,4563.0,22.1,15

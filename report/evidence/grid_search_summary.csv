@@ -1,0 +1,11 @@
+﻿model,stage,candidate_count,completed_candidates,fold_results,selected_params,validation_rmse,validation_peak_mae,lowest_rmse,rmse_2pct_candidates,selected_candidate
+lstm,1,4,4,12,"{""batch_size"": 32, ""dropout"": 0.2, ""hidden_units"": 64, ""learning_rate"": 0.001, ""lookback"": 168, ""num_layers"": 1}",12.904279368668826,20.844819931284107,,,
+lstm,2,6,6,18,"{""batch_size"": 32, ""dropout"": 0.2, ""hidden_units"": 128, ""learning_rate"": 0.001, ""lookback"": 168, ""num_layers"": 2}",12.329459652198297,18.381788523502728,,,
+lstm,3,12,12,36,"{""batch_size"": 32, ""dropout"": 0.3, ""hidden_units"": 128, ""learning_rate"": 0.001, ""lookback"": 168, ""num_layers"": 2}",12.193849655849045,17.917909166835496,,,
+lstm,4,3,3,9,"{""batch_size"": 16, ""dropout"": 0.3, ""hidden_units"": 128, ""learning_rate"": 0.001, ""lookback"": 168, ""num_layers"": 2}",12.197237493489405,15.644518375200233,,,
+tcn,1,4,4,12,"{""batch_size"": 32, ""dilations"": ""auto"", ""dropout"": 0.2, ""filters"": 64, ""kernel_size"": 3, ""learning_rate"": 0.001, ""lookback"": 24}",11.269445488436112,14.997887702336433,,,
+tcn,2,18,18,54,"{""batch_size"": 32, ""dilations"": ""auto+1"", ""dropout"": 0.2, ""filters"": 128, ""kernel_size"": 2, ""learning_rate"": 0.001, ""lookback"": 24}",10.925895978531004,13.253995321861517,,,
+tcn,3,12,12,36,"{""batch_size"": 32, ""dilations"": ""auto+1"", ""dropout"": 0.3, ""filters"": 128, ""kernel_size"": 2, ""learning_rate"": 0.001, ""lookback"": 24}",10.580222645401376,13.750925722808278,,,
+tcn,4,3,3,9,"{""batch_size"": 32, ""dilations"": ""auto+1"", ""dropout"": 0.3, ""filters"": 128, ""kernel_size"": 2, ""learning_rate"": 0.001, ""lookback"": 24}",10.580222645401376,13.750925722808278,,,
+xgboost,full grid,108,108,324,"{""colsample_bytree"": 1.0, ""learning_rate"": 0.1, ""max_depth"": 3, ""min_child_weight"": 5, ""n_estimators"": 200}",14.098063944662462,16.80588106354479,13.892925913337251,8.0,28.0
+lightgbm,full grid,108,108,324,"{""colsample_bytree"": 0.8, ""learning_rate"": 0.05, ""min_child_samples"": 50, ""n_estimators"": 500, ""num_leaves"": 15}",13.042257711357808,18.49255855921368,12.827313597277213,13.0,55.0

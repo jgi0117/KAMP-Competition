@@ -1,6 +1,6 @@
 # OKM 전력 피크 예측: 기본 9개 변수 비교
 
-이 브랜치는 KJH 정제 데이터만 사용해 LSTM, TCN, LSTM·TCN 가중 앙상블, XGBoost, LightGBM의 seed 42 결과를 비교합니다. XGBoost와 LightGBM만 새로 학습했습니다. 피처 엔지니어링 실험은 포함하지 않습니다.
+이 브랜치는 KJH 정제 데이터의 9개 공통 입력 변수로 LSTM, TCN, LSTM·TCN 가중 앙상블, XGBoost, LightGBM의 seed 42 결과를 비교합니다. XGBoost와 LightGBM은 이 브랜치에서 전체 그리드를 다시 탐색하고 학습했습니다.
 
 ## 바로 확인
 
@@ -11,16 +11,16 @@ python dashboard/app.py
 
 대시보드 실행 전 `python -m pip install -r dashboard/requirements.txt`가 필요합니다. 대시보드는 저장된 Test 703시간을 재생하며 실시간 예측을 수행하지 않습니다.
 
-결과보고서의 시각화와 HWPX는 아래 순서로 다시 생성합니다. 대시보드 캡처는 실제 Dash 화면을 Playwright로 저장하며 Chrome이 없으면 Playwright Chromium을 사용합니다.
+결과보고서의 근거표, 시각화 7개, HWPX와 검증을 한 명령으로 실행합니다. 저장된 대시보드 화면을 갱신할 때는 Playwright Chromium을 설치하고 `--capture-dashboard`를 붙입니다.
 
 ```powershell
-python -m pip install -r requirements-report.txt
-python -m playwright install chromium
-python scripts/make_report_figures.py
-python scripts/capture_dashboard.py
-python scripts/fill_result_report.py
-python scripts/verify_report.py
+python -m pip install -r requirements-submission.txt
+python scripts/reproduce_submission.py
 ```
+
+트리 모델의 108개 조합×3개 fold 학습까지 다시 실행하려면 `python scripts/reproduce_submission.py --train-trees --n-jobs 8`을 사용합니다. 대시보드 화면을 갱신하려면 `python -m playwright install chromium` 후 `--capture-dashboard`를 추가합니다. 신경망의 4단계 탐색과 평가 명령은 아래 재학습 절에 있습니다.
+
+제출용 본문은 [심사기준별 상세내용](report/심사기준별_상세내용.md)에서 바로 검토할 수 있으며, [HWPX 작성본](report/OKM_경진대회_결과보고서_작성본.hwpx)에 같은 내용과 그림이 들어 있습니다. 그리드 탐색의 후보 수·범위·3개 fold 결과, 최종 후보 선택 기준과 수치, 오경보·미탐지 및 변수 영향 분석을 심사표의 6개 장에 맞춰 기록했습니다.
 
 HWPX 작성본은 원본 양식의 장 구성과 필수 만족도 조사 항목을 유지합니다. 팀명·서명과 만족도 조사 완료 화면은 제출자가 채워야 합니다.
 

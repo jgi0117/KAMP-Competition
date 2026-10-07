@@ -1,0 +1,5 @@
+﻿morning,high_production,hours,peaks,false_positive,peak_rate
+False,False,433,9,22,0.020785219399538105
+False,True,124,13,19,0.10483870967741936
+True,False,104,15,23,0.14423076923076922
+True,True,42,12,21,0.2857142857142857
