@@ -1,0 +1,8 @@
+xgboost==2.0.3
+lightgbm==4.7.0
+numpy==2.4.3
+pandas==3.0.1
+scikit-learn==1.8.0
+scipy>=1.15,<2
+joblib>=1.4,<2
+lxml>=5,<7

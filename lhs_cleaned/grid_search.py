@@ -9,8 +9,13 @@ import argparse
 import itertools
 import json
 import os
+import sys
 import time
 from pathlib import Path
+
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+from model_search.lstm import SPACE as LSTM_SPACE
+from model_search.tcn import SPACE as TCN_SPACE
 
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
 
@@ -30,29 +35,7 @@ MAX_EPOCHS = 100
 PATIENCE = 10
 
 # 가이드 25장 공통 초기 조건 + 28~30장 튜닝 범위를 단계별로 나눈 것
-SEARCH_SPACE = {
-    "lstm": {
-        "base": dict(lookback=24, hidden_units=64, num_layers=1,
-                     dropout=0.2, learning_rate=1e-3, batch_size=32),
-        "stages": [
-            {"lookback": [24, 48, 72, 168]},
-            {"hidden_units": [32, 64, 128], "num_layers": [1, 2]},
-            {"learning_rate": [1e-4, 3e-4, 1e-3], "dropout": [0.0, 0.1, 0.2, 0.3]},
-            {"batch_size": [16, 32, 64]},
-        ],
-    },
-    "tcn": {
-        "base": dict(lookback=24, filters=64, kernel_size=3, dilations="auto",
-                     dropout=0.2, learning_rate=1e-3, batch_size=32),
-        "stages": [
-            {"lookback": [24, 48, 72, 168]},
-            {"filters": [32, 64, 128], "kernel_size": [2, 3, 5], "dilations": ["auto", "auto+1"]},
-            {"learning_rate": [1e-4, 3e-4, 1e-3], "dropout": [0.0, 0.1, 0.2, 0.3]},
-            {"batch_size": [16, 32, 64]},
-        ],
-    },
-
-}
+SEARCH_SPACE = {"lstm": LSTM_SPACE, "tcn": TCN_SPACE}
 
 SPACES = {"v1": SEARCH_SPACE}
 

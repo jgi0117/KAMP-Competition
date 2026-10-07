@@ -9,7 +9,11 @@ for context; saved imported results include only the requested three models.
 
 import argparse
 import os
+import sys
 from pathlib import Path
+
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+from model_search.ensemble import inverse_mse_weights
 
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
 
@@ -120,8 +124,9 @@ def main():
     weights = {}
     if "lstm" in choices and "tcn" in choices:
         for seed in seeds:
-            inv = {m: 1.0 / np.mean((y_val - val[(m, seed)]) ** 2) for m in ("lstm", "tcn")}
-            w = {m: v / sum(inv.values()) for m, v in inv.items()}
+            w = inverse_mse_weights(
+                y_val, {m: val[(m, seed)] for m in ("lstm", "tcn")}
+            )
             weights[seed] = w
             for store in (val, test):
                 store[("ensemble", seed)] = w["lstm"] * store[("lstm", seed)] + w["tcn"] * store[("tcn", seed)]

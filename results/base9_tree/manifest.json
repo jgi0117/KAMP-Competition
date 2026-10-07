@@ -1,0 +1,20 @@
+{
+  "cleaned_data_sha256": "ce8142c4d88d4b627f1893304a3c07de328f5b6cce5bda7fdefe20397096c698",
+  "seed": 42,
+  "feature_columns": [
+    "전력_평균_실수",
+    "생산량",
+    "기온",
+    "풍속",
+    "습도",
+    "강수량",
+    "시간_sin",
+    "시간_cos",
+    "주말여부"
+  ],
+  "lookback": 168,
+  "peak_threshold_kw": 177.0,
+  "selection": "within 2% of minimum mean fold RMSE, then minimum mean peak MAE",
+  "train_rule": "fold train only; 14-day early-stop block excluded",
+  "grid_size_per_tree": 108
+}

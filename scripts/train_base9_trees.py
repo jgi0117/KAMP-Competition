@@ -23,7 +23,11 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 LHS = ROOT / "lhs_cleaned"
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(LHS))
+
+from model_search.lightgbm import GRID as LIGHTGBM_GRID  # noqa: E402
+from model_search.xgboost import GRID as XGBOOST_GRID  # noqa: E402
 
 from src import data_pipeline as dp  # noqa: E402
 from src.evaluate import (  # noqa: E402
@@ -35,22 +39,7 @@ from src.evaluate import (  # noqa: E402
 
 SEED = 42
 LOOKBACK = 168
-GRID = {
-    "xgboost": {
-        "max_depth": [3, 5, 7],
-        "learning_rate": [0.01, 0.05, 0.1],
-        "n_estimators": [200, 500, 1000],
-        "min_child_weight": [1, 5],
-        "colsample_bytree": [0.8, 1.0],
-    },
-    "lightgbm": {
-        "num_leaves": [7, 15, 31],
-        "learning_rate": [0.01, 0.05, 0.1],
-        "n_estimators": [200, 500, 1000],
-        "min_child_samples": [20, 50],
-        "colsample_bytree": [0.8, 1.0],
-    },
-}
+GRID = {"xgboost": XGBOOST_GRID, "lightgbm": LIGHTGBM_GRID}
 
 
 def candidate_grid(model_name: str):
