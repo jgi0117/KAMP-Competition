@@ -4,6 +4,8 @@
 >
 > LSTM · TCN · TCN-LSTM · Weighted Ensemble 네 가지 딥러닝 모델로 OKM 공장의 **다음 1시간 전력**과 **제조 이상(전력 피크) 확률**을 예측한 과정과 결과입니다.
 > 팀 공통 평가 기준은 [`팀_공통_평가기준.md`](./팀_공통_평가기준.md)를 따릅니다.
+>
+> **그래프로 보기**: https://claude.ai/artifact/HXUHF7QGh38dAvzdzRGHMC
 
 ## 한눈에 보기
 
