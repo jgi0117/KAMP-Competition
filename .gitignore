@@ -12,3 +12,6 @@ __pycache__/
 
 # 학습된 모델 파일 (용량이 커서 제외)
 *.keras
+
+# run_all.py 재현 결과 (데이터 사본 포함)
+results/reproduce/

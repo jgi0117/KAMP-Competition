@@ -176,11 +176,17 @@ Test 8/16~9/14 (셧다운 제외 703시간, 이상 49시간), seed 42, 1차 설�
 
 ## 7. 코드 구조와 실행 방법
 
+**한 번에 실행 (요구사항 6번)**: `python run_all.py` 하나로 전처리 → 피처 생성 → 학습 → 평가 → 오류분석 → 결과 요약까지 자동 실행됩니다. 자세한 방법은 [`docs/REPRODUCE.md`](../REPRODUCE.md).
+- 정제 데이터부터 실행하면 정현님 피처 코드(`src/team_kjh/`)가 팀 실험 파일과 **바이트까지 같은** 피처 파일을 만듭니다 (MD5 `65bb158c…`).
+- 같은 환경·seed 42 로 두 번 실행한 결과가 **소수점까지 동일**합니다.
+
 ```
 src/data_pipeline.py      데이터 로드, fold·Test 분할, 피처 조합(base/F1/F2), Scaling, 시퀀스 생성, 이상 기준 177 kW
 src/models/               LSTM, TCN, TCN-LSTM
 src/evaluate.py           회귀 지표 + 이상 확률·경보 기준·경보 지표
 grid_search.py            단계별 그리드 서치 (--space v1: 1차, v2: 2차 피처 실험). 학습 1회마다 CSV 저장, 끊겨도 이어서 실행
+run_all.py                전처리부터 결과 요약까지 한 번에 실행 (요구사항 6번)
+src/team_kjh/             정현님 전처리·피처 생성 코드 사본 (kjh 브랜치)
 final_evaluate.py         최종 설정으로 검증 예측(σ·경보 기준·앙상블 가중치) + Test 예측, 베이스라인 포함 비교표
 analysis/error_analysis.py 요구사항 3번: 영향 변수, 상호작용, FN·FP 집중 조건 (그림·표·요약)
 notebooks/colab_grid_search.ipynb  Colab GPU 실행 노트북 (결과는 Google Drive 에 저장)
