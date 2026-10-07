@@ -14,3 +14,5 @@ dependencies:
   - ipykernel>=6.29
   - python-dotenv>=1.0
   - nbstripout>=0.7
+  - dash>=4.4
+  - plotly>=7.1
