@@ -11,7 +11,18 @@ python dashboard/app.py
 
 대시보드 실행 전 `python -m pip install -r dashboard/requirements.txt`가 필요합니다. 대시보드는 저장된 Test 703시간을 재생하며 실시간 예측을 수행하지 않습니다.
 
-결과보고서 HWPX는 `python scripts/fill_result_report.py`로 원본 양식에서 다시 생성할 수 있습니다. 이 명령에는 `lxml`이 필요합니다. 양식의 팀명·서명과 필수 만족도 조사 완료 화면은 제출자가 채워야 합니다.
+결과보고서의 시각화와 HWPX는 아래 순서로 다시 생성합니다. 대시보드 캡처는 실제 Dash 화면을 Playwright로 저장하며 Chrome이 없으면 Playwright Chromium을 사용합니다.
+
+```powershell
+python -m pip install -r requirements-report.txt
+python -m playwright install chromium
+python scripts/make_report_figures.py
+python scripts/capture_dashboard.py
+python scripts/fill_result_report.py
+python scripts/verify_report.py
+```
+
+HWPX 작성본은 원본 양식의 장 구성과 필수 만족도 조사 항목을 유지합니다. 팀명·서명과 만족도 조사 완료 화면은 제출자가 채워야 합니다.
 
 ## 재학습
 
@@ -53,6 +64,6 @@ python lhs_cleaned/final_evaluate.py --selection seed42 --seeds 42 --models lstm
 | `dashboard/` | 저장된 Test 예측 시각화 |
 | `presentation/` | 원본 발표 PPT |
 | `docs/` | 원본 HWPX 결과보고서 양식 |
-| `report/` | 원본 양식을 유지한 HWPX 작성본 |
+| `report/` | 원본 양식을 유지한 HWPX 작성본과 삽입한 그래프·대시보드 스크린샷 |
 
 비교 설계와 수치는 [BASE9_COMPARISON.md](BASE9_COMPARISON.md)를 참조하세요.

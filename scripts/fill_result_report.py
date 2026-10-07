@@ -6,6 +6,7 @@ import zipfile
 
 from lxml import etree
 import pandas as pd
+from PIL import Image
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,6 +14,9 @@ TEMPLATE = next((ROOT / "docs").glob("*결과보고서*.hwpx"))
 OUTPUT = ROOT / "report" / "OKM_경진대회_결과보고서_작성본.hwpx"
 HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 NS = {"hp": HP}
+HH = "http://www.hancom.co.kr/hwpml/2011/head"
+HC = "http://www.hancom.co.kr/hwpml/2011/core"
+OPF = "http://www.idpf.org/2007/opf/"
 
 
 def text_of(p):
@@ -34,7 +38,77 @@ def set_text(p, content):
 def paragraph(template, content):
     p = deepcopy(template)
     set_text(p, content)
+    for run in list(p.findall(f"{{{HP}}}run"))[1:]:
+        if not any((node.text or "").strip() for node in run.findall(f"{{{HP}}}t")):
+            p.remove(run)
+    if content.startswith("- "):
+        p.find(f"{{{HP}}}run").set("charPrIDRef", "37")
     return p
+
+
+def picture_paragraph(template, original_pic, image_id, path, number):
+    """Reuse the form's picture element with a new embedded PNG and flow layout."""
+    p = deepcopy(template)
+    for child in list(p):
+        p.remove(child)
+    run = etree.SubElement(p, f"{{{HP}}}run", charPrIDRef="37")
+    pic = deepcopy(original_pic)
+    pic.set("id", str(2000000000 + number))
+    pic.set("instid", str(2000001000 + number))
+    pic.set("zOrder", str(20 + number))
+    pic.find(f"{{{HC}}}img").set("binaryItemIDRef", image_id)
+    with Image.open(path) as im:
+        pixels_w, pixels_h = im.size
+    original_w, original_h = pixels_w * 75, pixels_h * 75
+    width = 45000 if number != 3 else 42500
+    height = round(width * pixels_h / pixels_w)
+    if height > 43500:
+        height = 43500
+        width = round(height * pixels_w / pixels_h)
+    for tag in ("orgSz", "imgDim"):
+        node = pic.find(f"{{{HP}}}{tag}")
+        if tag == "orgSz":
+            node.set("width", str(original_w)); node.set("height", str(original_h))
+        else:
+            node.set("dimwidth", str(original_w)); node.set("dimheight", str(original_h))
+    pic.find(f"{{{HP}}}curSz").set("width", str(width))
+    pic.find(f"{{{HP}}}curSz").set("height", str(height))
+    pic.find(f"{{{HP}}}sz").set("width", str(width))
+    pic.find(f"{{{HP}}}sz").set("height", str(height))
+    rect = pic.find(f"{{{HP}}}imgRect")
+    for corner, x, y in [("pt0", 0, 0), ("pt1", original_w, 0),
+                         ("pt2", original_w, original_h), ("pt3", 0, original_h)]:
+        node = rect.find(f"{{{HC}}}{corner}")
+        node.set("x", str(x)); node.set("y", str(y))
+    clip = pic.find(f"{{{HP}}}imgClip")
+    clip.set("right", str(original_w)); clip.set("bottom", str(original_h))
+    rotation = pic.find(f"{{{HP}}}rotationInfo")
+    rotation.set("centerX", str(width // 2)); rotation.set("centerY", str(height // 2))
+    scale = pic.find(f"{{{HP}}}renderingInfo").find(f"{{{HC}}}scaMatrix")
+    scale.set("e1", f"{width / original_w:.6f}")
+    scale.set("e5", f"{height / original_h:.6f}")
+    position = pic.find(f"{{{HP}}}pos")
+    position.set("treatAsChar", "1")
+    position.set("flowWithText", "1")
+    position.set("allowOverlap", "0")
+    position.set("vertRelTo", "PARA")
+    position.set("horzRelTo", "COLUMN")
+    pic.find(f"{{{HP}}}shapeComment").text = f"그림 {number}: {path.name}"
+    run.append(pic)
+    return p
+
+
+def font_header(original):
+    header = etree.fromstring(original)
+    properties = next(x for x in header.iter() if etree.QName(x).localname == "charProperties")
+    base = next(x for x in properties if x.get("id") == "14")
+    for ident, height in [("37", "1200"), ("38", "1000")]:
+        style = deepcopy(base)
+        style.set("id", ident)
+        style.set("height", height)
+        properties.append(style)
+    properties.set("itemCnt", str(len(properties)))
+    return etree.tostring(header, encoding="UTF-8", xml_declaration=True)
 
 
 def fill():
@@ -46,7 +120,9 @@ def fill():
     e = scores.loc["ensemble"]
     with zipfile.ZipFile(TEMPLATE) as source:
         root = etree.fromstring(source.read("Contents/section0.xml"))
+        package = etree.fromstring(source.read("Contents/content.hpf"))
         children = list(root)
+        original_pic = next(x for x in root.iter() if etree.QName(x).localname == "pic")
         cover = children[0]
         cover_ps = cover.xpath(".//hp:p", namespaces=NS)
         # The competition form reserves blank cells for project, team and summary.
@@ -107,11 +183,29 @@ def fill():
         ]
         headings = [1, 8, 16, 24, 32, 40]
         new_children = [cover]
+        figures = {
+            1: ("01_model_comparison.png", "그림 1. 다섯 후보의 동일 Test 구간 RMSE 및 피크 경보 F1"),
+            2: ("02_peak_timeline.png", "그림 2. 피크가 집중된 기간의 실측·앙상블 예측·경보"),
+            3: ("03_dashboard.png", "그림 3. 저장된 Test 예측을 재생하는 Dash 대시보드 실제 화면"),
+        }
         for n, position in enumerate(headings):
-            new_children.append(children[position])
+            heading = children[position]
+            heading.set("pageBreak", "1")
+            new_children.append(heading)
             bullet = children[position + 1]
             for line in chapters[n]:
                 new_children.append(paragraph(bullet, line))
+            if n in figures:
+                filename, caption = figures[n]
+                path = ROOT / "report/figures" / filename
+                if not path.exists():
+                    raise FileNotFoundError(f"Generate report figures first: {path}")
+                number = n
+                new_children.append(paragraph(bullet, caption))
+                new_children[-1].find(f"{{{HP}}}run").set("charPrIDRef", "38")
+                new_children[-1].set("pageBreak", "1")
+                new_children.append(picture_paragraph(children[position + 2], original_pic,
+                                                       f"report_image{number}", path, number))
         # Keep the form's mandatory survey section. The submission owner must
         # replace the example image with their own completion screenshot.
         new_children.extend(children[58:])
@@ -119,16 +213,39 @@ def fill():
             root.remove(child)
         for child in new_children:
             root.append(child)
+        # The supplied form stores layout coordinates calculated for its short
+        # placeholders. Keeping them makes the new lines paint on top of one
+        # another. Hancom recalculates these optional segments on opening.
+        for paragraph_node in root.xpath(".//hp:p", namespaces=NS):
+            for segments in paragraph_node.findall(f"{{{HP}}}linesegarray"):
+                paragraph_node.remove(segments)
+        manifest = package.find(f"{{{OPF}}}manifest")
+        for n, (filename, _) in figures.items():
+            etree.SubElement(manifest, f"{{{OPF}}}item", id=f"report_image{n}",
+                             href=f"BinData/{filename}", **{"media-type": "image/png", "isEmbeded": "1"})
         OUTPUT.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(OUTPUT, "w") as target:
             for item in source.infolist():
-                payload = etree.tostring(root, encoding="UTF-8", xml_declaration=True) if item.filename == "Contents/section0.xml" else source.read(item.filename)
+                if item.filename == "Contents/section0.xml":
+                    payload = etree.tostring(root, encoding="UTF-8", xml_declaration=True)
+                elif item.filename == "Contents/header.xml":
+                    payload = font_header(source.read(item.filename))
+                elif item.filename == "Contents/content.hpf":
+                    payload = etree.tostring(package, encoding="UTF-8", xml_declaration=True)
+                elif item.filename == "Preview/PrvText.txt":
+                    payload = "\n".join(text_of(x) for x in new_children if text_of(x)).encode("utf-8")
+                else:
+                    payload = source.read(item.filename)
                 target.writestr(item, payload)
+            for filename, _ in figures.values():
+                target.write(ROOT / "report/figures" / filename, f"BinData/{filename}")
     with zipfile.ZipFile(OUTPUT) as check:
         assert check.testzip() is None
         finished = etree.fromstring(check.read("Contents/section0.xml"))
         plain = " ".join(finished.xpath(".//hp:t/text()", namespaces=NS))
         assert "8.67 kW" in plain and "108개 조합" in plain and "작성 요령" not in plain
+        assert len([x for x in finished.iter() if etree.QName(x).localname == "pic"]) == 4
+        assert not any(etree.QName(x).localname == "linesegarray" for x in finished.iter())
     print(OUTPUT)
 
 

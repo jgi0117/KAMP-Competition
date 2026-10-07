@@ -8,4 +8,15 @@ header p, .panel p, .card-detail { color: #aabcc9; }
 .card-label { color: #aabcc9; font-size: 14px; }.card-value { font-size: 29px; font-weight: 700; margin: 12px 0 8px; }
 .card-detail { font-size: 13px; }.grid { display: grid; grid-template-columns: 2fr 1fr; gap: 18px; }
 .wide { grid-column: span 2; }.panel h2 { margin-top: 0; font-size: 19px; }
+.dash-datepicker { display: inline-block !important; width: auto !important;
+  background: transparent !important; border: 0 !important; }
+.dash-datepicker-input-wrapper {
+  display: inline-flex !important; align-items: center; gap: 8px; width: auto !important;
+  padding: 6px 10px; background: #24364a !important; color: #f8fafc !important;
+  border: 1px solid #60758a !important; border-radius: 6px;
+}
+.dash-datepicker-input { background: transparent !important; color: #f8fafc !important;
+  border: 0 !important; font-size: 15px !important; font-weight: 600 !important; }
+.dash-datepicker-input::placeholder { color: #cbd5e1 !important; }
+.dash-datepicker-range-arrow { color: #f8fafc !important; }
 @media(max-width: 800px) { .cards, .grid { grid-template-columns: 1fr; }.wide { grid-column: auto; } }
