@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""LSTM 기본 모델 (구현가이드 13장)."""
+"""LSTM regressor for the nine-input hourly sequence."""
 
 from tensorflow import keras
 from tensorflow.keras import layers

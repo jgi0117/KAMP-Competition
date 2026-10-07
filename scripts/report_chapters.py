@@ -14,8 +14,8 @@ def build_chapters(root: Path, scores: pd.DataFrame):
     interaction = pd.read_csv(evidence / "production_time_interaction.csv", encoding="utf-8-sig")
     errors = pd.read_csv(evidence / "test_error_by_hour.csv", encoding="utf-8-sig").set_index("hour")
     misses = pd.read_csv(evidence / "test_missed_peaks.csv", encoding="utf-8-sig")
-    settings = pd.read_csv(root / "lhs_cleaned/results/final/alert_settings.csv", encoding="utf-8-sig").set_index("model")
-    weights = pd.read_csv(root / "lhs_cleaned/results/final/ensemble_weights.csv", encoding="utf-8-sig").set_index("model")
+    settings = pd.read_csv(root / "neural/results/final/alert_settings.csv", encoding="utf-8-sig").set_index("model")
+    weights = pd.read_csv(root / "neural/results/final/ensemble_weights.csv", encoding="utf-8-sig").set_index("model")
     e = scores.loc["ensemble"]
     base = audit["baselines"]["lag168"]
     gain = (base["rmse"] - e.rmse) / base["rmse"]
@@ -101,7 +101,7 @@ def build_chapters(root: Path, scores: pd.DataFrame):
         ],
         [
             "◦ 6.1 실행 환경과 파일 구성",
-            "- data/의 원본·정제 CSV, src/preprocessing.py의 정제 규칙, model_search/의 모델별 탐색 범위, lhs_cleaned/의 LSTM·TCN 학습과 평가, scripts/의 트리 탐색·비교·분석, results/의 후보별 결과, dashboard/와 report/를 순서대로 배치했다.",
+            "- data/의 원본·정제 CSV, src/preprocessing.py의 정제 규칙, model_search/의 모델별 탐색 범위, neural/core/의 신경망 구현·평가, neural/의 LSTM·TCN 탐색과 최종 학습, scripts/의 트리 탐색·비교·분석, results/의 후보별 결과, dashboard/와 report/를 순서대로 배치했다.",
             "- Python 환경은 requirements-tree.txt와 requirements-report.txt에 명시했다. seed 42, 데이터 해시, 9개 변수 목록, 피크 기준, 후보 선택 규칙을 results/base9_tree/manifest.json에 기록했다.",
             "◦ 6.2 전처리부터 제출물 생성까지",
             "- python scripts/verify_cleaned_data.py 는 원본 6,168행에서 정제 결과를 다시 만들고 제공 CSV의 모든 열과 비교한다. python scripts/train_base9_trees.py --models lightgbm xgboost 는 두 트리의 108개×3 fold 결과와 선택 모델을 생성한다.",

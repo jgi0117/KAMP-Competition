@@ -3,8 +3,7 @@
 
 Uses the cleaned CSV and nine base inputs. Three time-ordered validation
 folds select settings, residual sigma, ensemble weights, and alert cutoffs.
-The held-out Test period is evaluated once. Baselines are also calculated
-for context; saved imported results include only the requested three models.
+The held-out Test period is evaluated once. Lag baselines provide context.
 """
 
 import argparse
@@ -20,9 +19,9 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
 import numpy as np
 import pandas as pd
 
-import grid_search as gs
-from src import data_pipeline as dp
-from src.evaluate import (
+from neural import grid_search as gs
+from neural.core import data_pipeline as dp
+from neural.core.evaluate import (
     choose_alert_cutoff,
     evaluate_alerts,
     evaluate_regression,
@@ -54,35 +53,26 @@ def main():
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--data", help="전처리 CSV 경로")
     parser.add_argument("--grid-dir", default=str(Path(__file__).resolve().parent / "results" / "grid_search"), help="그리드 서치 결과 폴더")
-    parser.add_argument("--out-dir", default=str(Path(__file__).resolve().parent / "results" / "reproduced"), help="최종 결과 저장 폴더")
+    parser.add_argument("--out-dir", default=str(Path(__file__).resolve().parent / "results" / "final"), help="최종 결과 저장 폴더")
     parser.add_argument("--models", nargs="+", default=MODELS, choices=MODELS)
     parser.add_argument("--max-epochs", type=int, default=gs.MAX_EPOCHS)
-    parser.add_argument("--folds", type=int, default=len(dp.FOLD_VAL_RANGES),
-                        help="검증 fold 수 (기본 3)")
-    parser.add_argument("--space", choices=list(gs.SPACES), default="v1",
-                        help="그리드 서치 탐색 계획 (v1 만 지원)")
-    parser.add_argument("--selection", choices=["seed42", "confirm"], default="seed42",
-                        help="최종 설정 선택 기준 (기본 seed42: 팀 공통 기준)")
-    parser.add_argument("--seeds", type=int, nargs="+", default=[gs.DEFAULT_SEED],
-                        help="학습 seed (기본 42 한 번)")
     args = parser.parse_args()
-    seeds = args.seeds
+    seeds = [gs.DEFAULT_SEED]
     thr = dp.PEAK_THRESHOLD_KW
 
-    gs.use_space(args.space)
     gs.RESULTS_DIR = Path(args.grid_dir)
     out_dir = Path(args.out_dir)
     (out_dir / "models").mkdir(parents=True, exist_ok=True)
 
     df = dp.load_data(args.data)
-    folds = dp.get_folds(df)[:args.folds]
+    folds = dp.get_folds(df)
     final_split = dp.get_final_split(df)
     power = df[dp.TARGET_COLUMN]
 
     # ---------- 1. 모델별 최종 설정 ----------
     choices = {}
     for name in args.models:
-        params, row, basis = gs.final_choice(name, gs.load_results(name), args.folds, args.selection)
+        params, row, basis = gs.final_choice(name, gs.load_results(name), len(folds))
         if params is None:
             print(f"[{name}] 그리드 서치 결과가 없어 건너뜁니다.")
             continue

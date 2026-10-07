@@ -35,28 +35,29 @@ python scripts/train_base9_trees.py --models lightgbm xgboost --n-jobs 8
 python scripts/build_base9_comparison.py
 ```
 
-신경망 재학습 환경은 `lhs_cleaned/requirements.txt`를 사용합니다. 단계별 탐색은 아래 순서로 실행합니다. 각 단계의 완료 결과를 다음 단계가 읽습니다.
+신경망 재학습 환경은 `neural/requirements.txt`를 사용합니다. 단계별 탐색은 아래 순서로 실행합니다. 각 단계의 완료 결과를 다음 단계가 읽습니다.
 
 ```powershell
 foreach ($model in @('lstm', 'tcn')) {
   foreach ($stage in 1..4) {
-    python lhs_cleaned/grid_search.py --model $model --stage $stage
+    python neural/grid_search.py --model $model --stage $stage
   }
 }
-python lhs_cleaned/final_evaluate.py --selection seed42 --seeds 42 --models lstm tcn
+python neural/final_evaluate.py --models lstm tcn
 ```
 
-신경망 재학습에는 상당한 시간이 필요하며 기존 seed 42 fold 결과와 최종 예측은 `lhs_cleaned/results/`에 보존되어 있습니다. 신경망 가중치 파일은 보존되지 않아 새 입력의 즉시 추론은 지원하지 않습니다.
+신경망 재학습에는 상당한 시간이 필요합니다. seed 42 fold 결과와 최종 예측은 `neural/results/`에 보관되어 있으며, 재학습 명령은 `.keras` 모델 파일을 생성합니다.
 
 ## 제출 경로
 
 | 경로 | 내용 |
 |---|---|
 | `data/okm_cleaned_2021.csv` | 학습에 사용한 KJH 정제 자료 |
-| `data/okm_augumented_2021.csv` | 전처리 재현용 원본; 학습에 미사용 |
+| `data/okm_augumented_2021.csv` | 전처리 재현용 원본 |
 | `src/preprocessing.py` | KJH 데이터 정제 코드 |
 | `model_search/` | LSTM·TCN·XGBoost·LightGBM별 탐색 범위 |
-| `lhs_cleaned/grid_search.py`, `final_evaluate.py` | 신경망 탐색·최종 평가와 앙상블 |
+| `neural/core/` | 9개 입력의 시간순 분할·평가와 LSTM·TCN 구현 |
+| `neural/grid_search.py`, `neural/final_evaluate.py` | 신경망 탐색·최종 평가와 앙상블 |
 | `scripts/train_base9_trees.py` | 두 트리 모델의 전체 그리드 탐색·평가 |
 | `scripts/build_base9_comparison.py` | 다섯 후보 결과와 시각·정답 일치 검증 |
 | `results/base9_tree/` | 전체 트리 그리드, 선택 모델, 예측, 지표 |
@@ -65,5 +66,6 @@ python lhs_cleaned/final_evaluate.py --selection seed42 --seeds 42 --models lstm
 | `presentation/` | 원본 발표 PPT |
 | `docs/` | 원본 HWPX 결과보고서 양식 |
 | `report/` | 원본 양식을 유지한 HWPX 작성본과 삽입한 그래프·대시보드 스크린샷 |
+| `scripts/reproduce_submission.py` | 정제 검증부터 보고서 파일 검증까지 실행 |
 
 비교 설계와 수치는 [BASE9_COMPARISON.md](BASE9_COMPARISON.md)를 참조하세요.

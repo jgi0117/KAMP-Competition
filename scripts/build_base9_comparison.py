@@ -7,13 +7,13 @@ import pandas as pd
 
 
 ROOT = Path(__file__).resolve().parents[1]
-LHS_RESULTS = ROOT / "lhs_cleaned" / "results" / "final"
+NEURAL_RESULTS = ROOT / "neural" / "results" / "final"
 TREE_RESULTS = ROOT / "results" / "base9_tree"
 
 
 def main():
-    lhs_predictions = pd.read_csv(LHS_RESULTS / "test_predictions.csv")
-    lhs_metrics = pd.read_csv(LHS_RESULTS / "test_metrics_per_seed.csv", encoding="utf-8-sig")
+    neural_predictions = pd.read_csv(NEURAL_RESULTS / "test_predictions.csv")
+    neural_metrics = pd.read_csv(NEURAL_RESULTS / "test_metrics_per_seed.csv", encoding="utf-8-sig")
     tree_metrics = pd.read_csv(TREE_RESULTS / "test_metrics.csv", encoding="utf-8-sig")
     expected = {"xgboost", "lightgbm"}
     if set(tree_metrics.model) != expected:
@@ -25,18 +25,18 @@ def main():
         if len(counts) != 108 or not counts.eq(3).all() or len(detail) != 324:
             raise ValueError(f"{name} grid incomplete: {len(detail)} fold rows")
         prediction = pd.read_csv(TREE_RESULTS / "predictions" / f"{name}_test.csv")
-        if not pd.to_datetime(prediction.datetime).equals(pd.to_datetime(lhs_predictions.datetime)):
-            raise ValueError(f"{name} Test timestamps differ from LHS")
-        if not np.allclose(prediction.actual, lhs_predictions.actual, atol=1e-6):
-            raise ValueError(f"{name} Test target differs from LHS")
+        if not pd.to_datetime(prediction.datetime).equals(pd.to_datetime(neural_predictions.datetime)):
+            raise ValueError(f"{name} Test timestamps differ from neural models")
+        if not np.allclose(prediction.actual, neural_predictions.actual, atol=1e-6):
+            raise ValueError(f"{name} Test target differs from neural models")
 
     models = ["lstm", "tcn", "ensemble", "xgboost", "lightgbm"]
     rows = pd.concat(
-        [lhs_metrics.loc[lhs_metrics.model.isin(models)], tree_metrics],
+        [neural_metrics.loc[neural_metrics.model.isin(models)], tree_metrics],
         ignore_index=True,
     )
     rows = rows.set_index("model").loc[models].reset_index()
-    rows.insert(1, "source", ["lhs_existing"] * 3 + ["base9_retrained"] * 2)
+    rows.insert(1, "source", ["neural_seed42_saved"] * 3 + ["tree_retrained"] * 2)
     rows["n_features"] = 9
     rows["lookback"] = rows.model.map(
         {"lstm": 168, "tcn": 24, "ensemble": np.nan, "xgboost": 168, "lightgbm": 168}

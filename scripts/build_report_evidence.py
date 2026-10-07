@@ -11,10 +11,10 @@ from sklearn.metrics import f1_score, mean_absolute_error, mean_squared_error, p
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "report/evidence"
-sys.path.insert(0, str(ROOT / "lhs_cleaned"))
-import grid_search as deep_search  # noqa: E402
-from src import data_pipeline as dp  # noqa: E402
-from src.evaluate import peak_probability  # noqa: E402
+sys.path.insert(0, str(ROOT))
+from neural import grid_search as deep_search  # noqa: E402
+from neural.core import data_pipeline as dp  # noqa: E402
+from neural.core.evaluate import peak_probability  # noqa: E402
 
 
 def baseline(actual, predicted, threshold=177.0):
@@ -57,7 +57,7 @@ def diagnostics(clean, test):
 def grid_evidence():
     rows = []
     for model in ("lstm", "tcn"):
-        result = pd.read_csv(ROOT / f"lhs_cleaned/results/grid_search/{model}.csv", encoding="utf-8-sig")
+        result = pd.read_csv(ROOT / f"neural/results/grid_search/{model}.csv", encoding="utf-8-sig")
         for stage in range(1, 5):
             configs = deep_search.stage_configs(model, stage, result, 3)
             ids = [deep_search.config_id(config) for config in configs]
@@ -117,15 +117,36 @@ def condition_analysis(clean, test):
     return joined, interaction, hot, hourly, misses
 
 
+def combined_error_by_hour(test):
+    """Summarize validation and Test errors with the saved alert rule."""
+    validation = pd.read_csv(ROOT / "neural/results/final/val_predictions.csv", encoding="utf-8-sig")
+    settings = pd.read_csv(ROOT / "neural/results/final/alert_settings.csv", encoding="utf-8-sig")
+    ensemble = settings.set_index("model").loc["ensemble"]
+    joined = pd.concat([validation, test], ignore_index=True)
+    probability = peak_probability(joined.pred_ensemble_seed42.to_numpy(),
+                                   float(ensemble.sigma), dp.PEAK_THRESHOLD_KW)
+    actual_peak = joined.actual.to_numpy() >= dp.PEAK_THRESHOLD_KW
+    alert = probability >= float(ensemble.alert_cutoff)
+    joined["hour"] = pd.to_datetime(joined.datetime).dt.hour
+    joined["false_negative"] = actual_peak & ~alert
+    joined["false_positive"] = ~actual_peak & alert
+    grouped = joined.groupby("hour", as_index=False).agg(
+        hours=("actual", "size"), false_negative=("false_negative", "sum"),
+        false_positive=("false_positive", "sum"))
+    grouped.to_csv(OUT / "combined_error_by_hour.csv", index=False, encoding="utf-8-sig")
+    return grouped
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     clean = dp.load_data()
-    test = pd.read_csv(ROOT / "lhs_cleaned/results/final/test_predictions.csv", encoding="utf-8-sig")
+    test = pd.read_csv(ROOT / "neural/results/final/test_predictions.csv", encoding="utf-8-sig")
     test["datetime"] = pd.to_datetime(test.datetime)
     info = diagnostics(clean, test)
     (OUT / "data_diagnostics.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
     grid = grid_evidence()
     joined, interaction, hot, hourly, misses = condition_analysis(clean, test)
+    combined_error_by_hour(test)
     print(json.dumps(info, ensure_ascii=False, indent=2))
     print(grid.to_string(index=False))
     print("production × time\n", interaction.to_string())

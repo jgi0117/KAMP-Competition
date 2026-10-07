@@ -18,7 +18,7 @@ def load_evidence():
     if not comparison.seed.eq(42).all() or not comparison.n_features.eq(9).all():
         raise ValueError("Comparison must use seed 42 and nine input variables")
 
-    predictions = pd.read_csv(ROOT / "lhs_cleaned/results/final/test_predictions.csv")
+    predictions = pd.read_csv(ROOT / "neural/results/final/test_predictions.csv")
     predictions["datetime"] = pd.to_datetime(predictions.datetime)
     predictions = predictions.sort_values("datetime").reset_index(drop=True)
     if len(predictions) != 703 or predictions.datetime.duplicated().any():
@@ -26,8 +26,8 @@ def load_evidence():
     if not predictions.datetime.diff().dropna().le(pd.Timedelta(hours=18)).all():
         raise ValueError("Unexpected gap in Test predictions")
 
-    settings = pd.read_csv(ROOT / "lhs_cleaned/results/final/alert_settings.csv", encoding="utf-8-sig").set_index("model")
-    weights = pd.read_csv(ROOT / "lhs_cleaned/results/final/ensemble_weights.csv", encoding="utf-8-sig").set_index("model")
+    settings = pd.read_csv(ROOT / "neural/results/final/alert_settings.csv", encoding="utf-8-sig").set_index("model")
+    weights = pd.read_csv(ROOT / "neural/results/final/ensemble_weights.csv", encoding="utf-8-sig").set_index("model")
     cutoff = float(settings.loc["ensemble", "alert_cutoff"])
     predictions["predicted"] = predictions["pred_ensemble_seed42"]
     predictions["probability"] = predictions["prob_ensemble_seed42"]

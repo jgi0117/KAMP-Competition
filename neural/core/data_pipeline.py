@@ -1,11 +1,8 @@
 # -*- coding: utf-8 -*-
-"""LSTM·TCN 계열 모델용 데이터 파이프라인.
+"""Prepare the nine common inputs for LSTM, TCN, and tree models.
 
-docs/modeling/구현가이드 6~11장의 흐름(로드 → 시간순 분리 → Scaling → Sequence 생성)을 따르되,
-팀 합의에 따라 고정 3분할 대신 시간순 확장(expanding) fold 3개 + 고정 Test 구간을 사용한다.
-
-예측 문제: 시점 t-L ... t-1 의 입력(L = lookback)으로 시점 t 의 `전력_평균_실수`를 예측한다.
-즉 가이드의 "과거 N시간 → 다음 1시간(t+1)" 과 같은 정의다.
+An input window ending at t-1 predicts `전력_평균_실수` at t. Three
+expanding validation folds precede one fixed Test period.
 """
 
 import os
@@ -22,12 +19,12 @@ from sklearn.preprocessing import StandardScaler
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 
-# 정현님 전처리 결과 파일. 경로가 다르면 환경변수 KAMP_DATA_PATH 로 지정한다.
+# KJH cleaned data; KAMP_DATA_PATH can override the file path.
 DATA_PATH = Path(os.getenv("KAMP_DATA_PATH", ROOT_DIR.parent / "data" / "okm_cleaned_2021.csv"))
 
 TARGET_COLUMN = "전력_평균_실수"
 
-# 가이드 5장의 시작 Feature. 시간_sin/cos, 주말여부는 파일에 없으면 load_data()에서 만든다.
+# Nine shared inputs. Calendar values are derived in load_data() when needed.
 FEATURE_COLUMNS = [
     "전력_평균_실수",
     "생산량",
@@ -57,8 +54,7 @@ FOLD_VAL_RANGES = [
 EARLY_STOP_DAYS = 14
 
 # 제조 이상(전력 피크) 기준: 팀 공통 고정값 177 kW.
-# = Test 이전 전체 기간(1/1~8/15, 셧다운 제외) 전력의 상위 5% (peak_threshold_from_data() 로 재현).
-# 모든 모델·모든 구간에 같은 값을 쓴다. Test 구간 피크 49시간(29건, 15일).
+# Fixed from the pre-Test period; shared across models and splits.
 PEAK_THRESHOLD_KW = 177.0
 PEAK_QUANTILE = 0.95
 
@@ -77,7 +73,7 @@ def load_data(path=None):
     if not path.exists():
         raise FileNotFoundError(
             f"데이터 파일이 없습니다: {path}\n"
-            "정현님 전처리 결과를 data/processed/okm_cleaned.csv 에 두거나 "
+            "정제 파일을 data/okm_cleaned_2021.csv 에 두거나 "
             "환경변수 KAMP_DATA_PATH 로 경로를 지정하세요."
         )
 

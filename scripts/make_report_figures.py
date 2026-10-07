@@ -153,18 +153,15 @@ def feature_interaction_chart():
 
 def error_conditions_chart():
     recent = pd.read_csv(ROOT / "report/evidence/test_error_by_hour.csv", encoding="utf-8-sig")
-    diagnostic = pd.read_csv(ROOT / "lhs_cleaned/results/final/analysis_ensemble/tables/fnfp_by_condition.csv",
-                             encoding="utf-8-sig")
-    diagnostic = diagnostic.loc[diagnostic.condition.eq("시간대")].copy()
-    diagnostic["hour"] = diagnostic.value.str.replace("시", "", regex=False).astype(int)
+    diagnostic = pd.read_csv(ROOT / "report/evidence/combined_error_by_hour.csv", encoding="utf-8-sig")
     fig, axes = plt.subplots(1, 2, figsize=(11.2, 3.9), constrained_layout=True)
     left, right = axes
     left.bar(recent.hour, recent.false_positive, color="#ef4444", alpha=.8)
     left.set_title("최종 Test 오경보 85건", loc="left", weight="bold")
     left.set_ylabel("오경보 건수"); left.set_xlabel("시간대")
     left.set_xticks(range(0, 24, 3)); left.grid(axis="y", alpha=.2)
-    top = diagnostic.sort_values("FN", ascending=False).head(6).sort_values("hour")
-    right.bar(top.hour.astype(str) + "시", top.FN, color="#f59e0b")
+    top = diagnostic.sort_values("false_negative", ascending=False).head(6).sort_values("hour")
+    right.bar(top.hour.astype(str) + "시", top.false_negative, color="#f59e0b")
     right.set_title("검증+Test 미탐지 집중 시간", loc="left", weight="bold")
     right.set_ylabel("미탐지 건수"); right.set_xlabel("시간대")
     right.grid(axis="y", alpha=.2)

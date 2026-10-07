@@ -18,7 +18,7 @@ def run(script: str, *args: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--train-trees", action="store_true",
-                        help="Repeat the full 108-candidate search for each tree model")
+                        help="Complete both 108-candidate searches and refit the tree models")
     parser.add_argument("--n-jobs", type=int, default=8)
     parser.add_argument("--capture-dashboard", action="store_true",
                         help="Refresh the dashboard screenshot using Playwright")

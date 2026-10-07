@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Conv1D 기반 TCN (구현가이드 15~16장).
+"""Causal Conv1D TCN for the nine-input hourly sequence.
 
 출력은 마지막 시점(t-1)의 특징을 사용한다. causal padding 이므로 마지막 시점의 특징이
 receptive field 안의 과거 전체를 요약한다.

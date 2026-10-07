@@ -1,9 +1,9 @@
-"""Search and evaluate XGBoost and LightGBM beside the LHS base-nine models.
+"""Search and evaluate XGBoost and LightGBM beside the neural models.
 
 Only the tree models are trained. LSTM, TCN, and their weighted ensemble are
-read from the existing seed-42 LHS result CSVs. Each tree candidate uses the
+read from the saved seed-42 neural results. Each tree candidate uses the
 same cleaned data, nine past-only inputs, chronological folds, held-out Test
-period, and 177 kW peak definition as the LHS experiment.
+period, and 177 kW peak definition.
 """
 
 from __future__ import annotations
@@ -22,15 +22,13 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
-LHS = ROOT / "lhs_cleaned"
 sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(LHS))
 
 from model_search.lightgbm import GRID as LIGHTGBM_GRID  # noqa: E402
 from model_search.xgboost import GRID as XGBOOST_GRID  # noqa: E402
 
-from src import data_pipeline as dp  # noqa: E402
-from src.evaluate import (  # noqa: E402
+from neural.core import data_pipeline as dp  # noqa: E402
+from neural.core.evaluate import (  # noqa: E402
     choose_alert_cutoff,
     evaluate_alerts,
     evaluate_regression,
@@ -106,14 +104,12 @@ def atomic_csv(frame: pd.DataFrame, path: Path):
     temporary.replace(path)
 
 
-def search(name, X, y, indices, keep, folds, output, n_jobs, max_candidates):
+def search(name, X, y, indices, keep, folds, output, n_jobs):
     path = output / "grid_search" / f"{name}.csv"
     previous = pd.read_csv(path, encoding="utf-8-sig") if path.exists() else pd.DataFrame()
     rows = previous.to_dict("records")
     done = set(zip(previous.get("candidate", []), previous.get("fold", [])))
     candidates = list(candidate_grid(name))
-    if max_candidates:
-        candidates = candidates[:max_candidates]
     print(f"{name}: {len(candidates)} candidates × {len(folds)} folds", flush=True)
     for candidate_number, params in enumerate(candidates, start=1):
         for split in folds:
@@ -234,7 +230,6 @@ def main():
     parser.add_argument("--out", type=Path, default=ROOT / "results" / "base9_tree")
     parser.add_argument("--models", nargs="+", choices=tuple(GRID), default=["lightgbm", "xgboost"])
     parser.add_argument("--n-jobs", type=int, default=min(8, os.cpu_count() or 1))
-    parser.add_argument("--max-candidates", type=int, default=None, help="Smoke test only")
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     df = dp.load_data(args.data)
@@ -260,7 +255,7 @@ def main():
     summary = []
     for name in args.models:
         params, candidate, complete = search(
-            name, X, y, indices, keep, folds, args.out, args.n_jobs, args.max_candidates
+            name, X, y, indices, keep, folds, args.out, args.n_jobs
         )
         print(f"{name}: selected candidate {candidate}/{complete}: {params}", flush=True)
         row = evaluate_final(

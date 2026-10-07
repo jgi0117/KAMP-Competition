@@ -22,26 +22,18 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
 import numpy as np
 import pandas as pd
 
-from src import data_pipeline as dp
-from src.evaluate import evaluate_regression
+from neural.core import data_pipeline as dp
+from neural.core.evaluate import evaluate_regression
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results" / "grid_search"
 
 DEFAULT_SEED = 42
-CONFIRM_SEEDS = [17, 42, 73]
-CONFIRM_TOP_K = 3
 RMSE_TOLERANCE = 0.02
 MAX_EPOCHS = 100
 PATIENCE = 10
 
-# 가이드 25장 공통 초기 조건 + 28~30장 튜닝 범위를 단계별로 나눈 것
+# Four sequential search stages, shared across the three chronological folds.
 SEARCH_SPACE = {"lstm": LSTM_SPACE, "tcn": TCN_SPACE}
-
-SPACES = {"v1": SEARCH_SPACE}
-
-def use_space(name):
-    global SEARCH_SPACE
-    SEARCH_SPACE = SPACES[name]
 
 KEY_COLS = ["config_id", "seed", "fold"]
 
@@ -52,12 +44,12 @@ KEY_COLS = ["config_id", "seed", "fold"]
 
 def build_model(model_name, params, input_shape):
     if model_name == "lstm":
-        from src.models.lstm_model import build_lstm
+        from neural.core.models.lstm_model import build_lstm
         return build_lstm(input_shape, hidden_units=params["hidden_units"],
                           num_layers=params["num_layers"], dropout=params["dropout"],
                           learning_rate=params["learning_rate"])
     if model_name == "tcn":
-        from src.models.tcn_model import build_tcn
+        from neural.core.models.tcn_model import build_tcn
         return build_tcn(input_shape, filters=params["filters"],
                          kernel_size=params["kernel_size"], dilations=params["dilations"],
                          dropout=params["dropout"], learning_rate=params["learning_rate"])
@@ -169,28 +161,16 @@ def all_stage_ids(model_name, results, n_folds):
     return list(dict.fromkeys(ids))
 
 
-def final_choice(model_name, results, n_folds, mode="seed42"):
-    """최종 설정 1개와 그 근거.
-
-    mode="seed42"  (팀 공통 기준) 모든 단계의 seed 42 결과(fold 평균)로 고른다.
-    mode="confirm" confirm(seed 3개)이 끝났으면 그 결과로, 아니면 seed 42 결과로 고른다.
-
-    반환: (설정 dict, 집계 행, 근거 문자열) 또는 결과가 없으면 (None, None, None)
-    """
+def final_choice(model_name, results, n_folds):
+    """Select the seed-42 configuration from all completed stage results."""
     if results.empty:
         return None, None, None
     ids = all_stage_ids(model_name, results, n_folds)
-    agg = pd.DataFrame()
-    if mode == "confirm":
-        agg = aggregate(results, ids, n_folds, CONFIRM_SEEDS)
-        basis = "confirm (seed 3개 × fold 평균)"
-    if agg.empty:
-        agg = aggregate(results, ids, n_folds, [DEFAULT_SEED])
-        basis = "seed 42 (fold 평균)" if mode == "seed42" else "seed 42 결과 (confirm 미완료)"
+    agg = aggregate(results, ids, n_folds, [DEFAULT_SEED])
     if agg.empty:
         return None, None, None
     best = select_best(agg)
-    return json.loads(best["config_id"]), best, basis
+    return json.loads(best["config_id"]), best, "seed 42 (fold 평균)"
 
 
 # =========================================================
@@ -303,25 +283,20 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--model", required=True, choices=list(SEARCH_SPACE))
-    parser.add_argument("--stage", help="1, 2, 3, 4 또는 confirm")
+    parser.add_argument("--stage", help="1, 2, 3 또는 4")
     parser.add_argument("--summary", action="store_true", help="결과 요약만 출력")
-    parser.add_argument("--data", help="전처리 CSV 경로 (기본: data/processed/okm_cleaned.csv)")
+    parser.add_argument("--data", help="전처리 CSV 경로 (기본: data/okm_cleaned_2021.csv)")
     parser.add_argument("--max-epochs", type=int, default=MAX_EPOCHS)
-    parser.add_argument("--folds", type=int, default=len(dp.FOLD_VAL_RANGES),
-                        help="앞에서부터 사용할 fold 수 (동작 확인용)")
     parser.add_argument("--results-dir",
                         help="결과 CSV 폴더")
-    parser.add_argument("--space", choices=list(SPACES), default="v1",
-                        help="탐색 계획 (v1 만 지원)")
     args = parser.parse_args()
 
     global RESULTS_DIR
-    use_space(args.space)
     if args.results_dir:
         RESULTS_DIR = Path(args.results_dir)
 
     df = dp.load_data(args.data)
-    folds = dp.get_folds(df)[:args.folds]
+    folds = dp.get_folds(df)
     n_folds = len(folds)
     model_name = args.model
     n_stages = len(SEARCH_SPACE[model_name]["stages"])
@@ -338,28 +313,14 @@ def main():
                 break
             print_table(aggregate(results, ids, n_folds, [DEFAULT_SEED]), f"Stage {stage}")
         ids = all_stage_ids(model_name, results, n_folds)
-        print_table(aggregate(results, ids, n_folds, CONFIRM_SEEDS), "Confirm (seed 3개 평균)")
         return
 
     if args.stage is None:
         parser.error("--stage 또는 --summary 를 지정하세요.")
 
-    if args.stage == "confirm":
-        results = load_results(model_name)
-        ids = all_stage_ids(model_name, results, n_folds)
-        agg = aggregate(results, ids, n_folds, [DEFAULT_SEED])
-        top = [json.loads(c) for c in agg["config_id"].head(CONFIRM_TOP_K)]
-        run_configs(model_name, "confirm", top, CONFIRM_SEEDS, df, folds, args.max_epochs)
-        results = load_results(model_name)
-        agg = aggregate(results, [config_id(p) for p in top], n_folds, CONFIRM_SEEDS)
-        print_table(agg, "Confirm 결과 (seed 3개 × fold 평균)")
-        params, _, _ = final_choice(model_name, results, n_folds, mode="confirm")
-        print(f"\n최종 선택: {config_id(params)}")
-        return
-
     stage = int(args.stage)
     if not 1 <= stage <= n_stages:
-        parser.error(f"--stage 는 1~{n_stages} 또는 confirm 입니다.")
+        parser.error(f"--stage 는 1~{n_stages}입니다.")
 
     results = load_results(model_name)
     configs = stage_configs(model_name, stage, results, n_folds)

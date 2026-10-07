@@ -1,4 +1,4 @@
-# KAMP 2026 · OKM 전력 피크 예측 (lhs 브랜치) — 재현용 라이브러리 버전
+# LSTM and TCN training environment
 # 검증 환경: Python 3.11.9, Windows 11 (CPU) / Google Colab T4 GPU
 # 설치: python -m pip install -r requirements.txt
 tensorflow==2.21.0
