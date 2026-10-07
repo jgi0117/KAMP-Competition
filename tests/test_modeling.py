@@ -162,7 +162,7 @@ def test_auto_device_matches_torch_cuda_availability():
 def test_finetune_settings_match_document_conditions():
     settings = FineTuneSettings.from_config({}, cv_splits=3, search_seed=42)
 
-    assert settings.scopes == tuple(f"F{index}" for index in range(8))
+    assert settings.scopes == ("F0", "F2", "F4", "F7")
     assert settings.learning_rates == (1e-6, 1e-5, 1e-4)
     assert settings.gradient_accumulation_steps == 32
     assert settings.max_steps == 1000

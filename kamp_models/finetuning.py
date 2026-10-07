@@ -42,6 +42,8 @@ SCOPE_BLOCKS: dict[str, dict[str, int | None]] = {
     },
 }
 
+DEFAULT_SCOPES = ("F0", "F2", "F4", "F7")
+
 
 @dataclass(frozen=True)
 class FineTuneSettings:
@@ -75,7 +77,9 @@ class FineTuneSettings:
     ) -> "FineTuneSettings":
         if cv_splits < 1:
             raise ValueError("cv_splits must be at least 1")
-        scopes = tuple(str(item).upper() for item in value.get("scopes", SCOPE_BLOCKS["chronos2"]))
+        scopes = tuple(
+            str(item).upper() for item in value.get("scopes", DEFAULT_SCOPES)
+        )
         invalid = sorted(set(scopes) - set(SCOPE_BLOCKS["chronos2"]))
         if invalid:
             raise ValueError(f"Unknown fine-tuning scopes: {', '.join(invalid)}")

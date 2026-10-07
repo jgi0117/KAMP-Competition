@@ -78,7 +78,7 @@ python run_models.py --data outputs/prepared/model_input_lhs.npz `
 
 - XGBoost와 LightGBM은 문서의 전체 grid를 세 개의 LHS fold에서 평가하고 평균 RMSE가 가장 낮은 조합을 선택합니다.
 - TimesFM 3.0, Chronos-2, Moirai 2.0은 zero-shot과 fine-tuning 결과를 모두 생성합니다.
-- Transformer fine-tuning에는 K-fold를 사용하지 않습니다. 각 `F0~F7 × 학습률 [1e-6, 1e-5, 1e-4]` 조합을 train에서 한 번 학습하고 validation에서 early stopping과 모델 선택을 수행하므로 모델당 탐색은 24회입니다.
+- Transformer fine-tuning에는 K-fold를 사용하지 않습니다. 대표 범위 `F0, F2, F4, F7`과 학습률 `[1e-6, 1e-5, 1e-4]`의 조합을 train에서 한 번 학습하고 validation에서 early stopping과 모델 선택을 수행하므로 모델당 탐색은 12회입니다. F0은 출력부, F2와 F4는 서로 다른 깊이의 일부 블록, F7은 전체 파라미터를 학습합니다.
 - 유효 batch size는 32, 최대 optimizer step은 1,000, 검증 주기는 100 step, early stopping patience는 3입니다.
 - 최종 비교 지표는 RMSE, MAE, R²만 사용합니다.
 
@@ -97,4 +97,4 @@ GPU를 사용할 수 있으면 자동으로 사용하고, 해당 라이브러리
 
 ## 터미널 진행 상태
 
-실행을 시작하면 선택된 장치, CUDA 연결 여부, GPU 이름, CUDA runtime과 VRAM이 먼저 출력됩니다. 학습 중에는 현재 모델 번호, tree grid의 후보·fold 진행률, foundation 모델의 F0~F7·학습률·holdout, optimizer step, 검증 RMSE와 경과 시간이 표시됩니다. 각 모델이 끝날 때 실제 사용 장치와 최종 RMSE도 출력됩니다.
+실행을 시작하면 선택된 장치, CUDA 연결 여부, GPU 이름, CUDA runtime과 VRAM이 먼저 출력됩니다. 학습 중에는 현재 모델 번호, tree grid의 후보·fold 진행률, foundation 모델의 F0/F2/F4/F7·학습률·holdout, optimizer step, 검증 RMSE와 경과 시간이 표시됩니다. 각 모델이 끝날 때 실제 사용 장치와 최종 RMSE도 출력됩니다.
