@@ -1,0 +1,13 @@
+﻿model,seed,split,best_epoch,epochs_run,train_seconds,n_train,n_eval
+lstm,42,fold1,22,32,712.6,2736,744
+lstm,42,fold2,21,31,944.3,3480,720
+lstm,42,fold3,17,27,963.4,4200,744
+lstm,42,final,18,28,5565.3,4944,703
+tcn,42,fold1,13,23,60.9,2880,744
+tcn,42,fold2,7,17,55.9,3624,720
+tcn,42,fold3,26,36,138.5,4344,744
+tcn,42,final,15,25,109.2,5088,703
+tcn_lstm,42,fold1,16,26,110.2,2856,744
+tcn_lstm,42,fold2,17,27,104.9,3600,720
+tcn_lstm,42,fold3,24,34,151.2,4320,744
+tcn_lstm,42,final,12,22,125.1,5064,703

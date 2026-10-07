@@ -380,13 +380,13 @@ def plot_fnfp(a, t, model_name, out):
     ax.plot(s.datetime, s.actual, color=INK2, linewidth=1, label="실제")
     ax.plot(s.datetime, s.pred, color=BLUE, linewidth=1.2, label=f"예측 ({LABELS[model_name]})")
     ax.axhline(THR, color=MUTED, linestyle="--", linewidth=1)
-    ax.text(s.datetime.iloc[0], THR + 2, f"이상 기준 {THR:.0f} kW", color=MUTED, fontsize=9)
+    ax.text(s.datetime.iloc[-1], THR + 3, f"이상 기준 {THR:.0f} kW", color=MUTED, fontsize=9, ha="right")
     for kind, color, marker in [("FN", FN_COLOR, "v"), ("FP", FP_COLOR, "^")]:
         k = s[s.outcome == kind]
         ax.scatter(k.datetime, k.actual, color=color, marker=marker, s=36, zorder=3,
                    edgecolors="white", linewidths=0.8, label=f"{kind} ({len(k)}시간)")
-    ax.set_ylabel("kW"); ax.set_title(f"Test 구간 실제·예측과 경보 오류 (8/16~9/14)")
-    ax.legend(ncol=4, frameon=False, loc="upper left", fontsize=9)
+    ax.set_ylabel("kW"); ax.set_title(f"Test 구간 실제·예측과 경보 오류 (8/16~9/14)", pad=28)
+    ax.legend(ncol=4, frameon=False, loc="lower center", bbox_to_anchor=(0.5, 1.06), fontsize=9)
     ax.grid(axis="y", color=GRID, linewidth=0.8); ax.spines[["top", "right"]].set_visible(False)
     save(fig, out / "figures" / "06_test_timeline_fnfp.png")
 

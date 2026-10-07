@@ -9,3 +9,6 @@ __pycache__/
 *.pyc
 .venv/
 .ipynb_checkpoints/
+
+# 학습된 모델 파일 (용량이 커서 제외)
+*.keras

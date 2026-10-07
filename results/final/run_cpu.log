@@ -1,0 +1,23 @@
+start 10:53:24
+[lstm] 최종 설정 (seed 42 (fold 평균)): {"batch_size": 16, "dropout": 0.3, "hidden_units": 128, "learning_rate": 0.001, "lookback": 168, "num_layers": 2}
+[tcn] 최종 설정 (seed 42 (fold 평균)): {"batch_size": 32, "dilations": "auto+1", "dropout": 0.3, "filters": 128, "kernel_size": 2, "learning_rate": 0.001, "lookback": 24}
+[tcn_lstm] 최종 설정 (seed 42 (fold 평균)): {"batch_size": 32, "dilations": "auto", "dropout": 0.2, "filters": 64, "kernel_size": 3, "learning_rate": 0.001, "lookback": 48, "lstm_units": 64}
+
+  [lstm] seed=42 검증 fold 3개 + Test 학습 완료
+  [tcn] seed=42 검증 fold 3개 + Test 학습 완료
+  [tcn_lstm] seed=42 검증 fold 3개 + Test 학습 완료
+
+Weighted Ensemble 가중치 (1/검증 MSE, seed 42): LSTM 0.444, TCN 0.556
+
+=== Test 결과 (8/16~9/14, 셧다운 제외 703시간, 이상 기준 177 kW, 이상 49시간, seed 42) ===
+                       Model   MSE  RMSE    R²   MAE    F1 Recall Precision  Brier PR-AUC FN  FP 경보기준
+            베이스라인: 직전 시간 그대로 662.4 25.74 0.783 16.00 0.412  0.571     0.322 0.0664  0.322 21  59 0.40
+            베이스라인: 지난주 같은 시간 153.6 12.40 0.950  8.26 0.366  0.714     0.246 0.0725  0.273 14 107 0.40
+                        LSTM  84.2  9.17 0.972  6.46 0.454  1.000     0.293 0.0454  0.537  0 118 0.15
+                         TCN 101.3 10.07 0.967  6.57 0.506  0.878     0.355 0.0446  0.542  6  78 0.25
+Weighted Ensemble (LSTM+TCN)  75.2  8.67 0.975  5.90 0.527  0.980     0.361 0.0413  0.579  1  85 0.20
+                    TCN-LSTM  89.9  9.48 0.971  6.57 0.467  0.939     0.311 0.0496  0.398  3 102 0.15
+
+F1·Recall·Precision·FN·FP: 이상 확률 ≥ 경보기준이면 경보. 경보기준은 검증 구간 F1 최대값.
+저장 위치: results\final
+exit 0 13:24:29
