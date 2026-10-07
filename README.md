@@ -1,5 +1,7 @@
 # 제조 생산데이터 기반 전력사용량 예측 모델 및 평가 지표 선정
 
+> `compare-base9-models` 브랜치의 9개 변수 LSTM·TCN·앙상블·XGBoost·LightGBM 비교는 [BASE9_COMPARISON.md](BASE9_COMPARISON.md)를 참조하세요. 기존 `outputs/xgboost_lightgbm_summary/`는 이전 20개 변수 실험입니다.
+
 2026년 10월 5일
 
 ## 1. 모델 후보 3개
