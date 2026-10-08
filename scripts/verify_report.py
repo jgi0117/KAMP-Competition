@@ -2,6 +2,7 @@
 
 from io import BytesIO
 from pathlib import Path
+import re
 import zipfile
 
 from lxml import etree
@@ -23,8 +24,11 @@ def main():
         text = " ".join(node.text or "" for node in section.iter()
                         if etree.QName(node).localname == "t")
         for chapter in range(1, 7):
-            if f"제{chapter}장" not in text:
+            if f"□ 제{chapter}장" not in text:
                 raise ValueError(f"Missing chapter {chapter}")
+        for required in ("F1은 0.366", "F1 0.412", "0.161", "0.115", "관리한계 내부"):
+            if required not in text:
+                raise ValueError(f"Missing corrected report text: {required}")
         if "만족도 조사 완료" not in text or "작성 요령" in text:
             raise ValueError("Form control sections were altered")
         if any(etree.QName(node).localname == "linesegarray" for node in section.iter()):
@@ -101,8 +105,17 @@ def main():
                      if etree.QName(node).localname == "img"}
         items = {node.get("id"): node.get("href") for node in manifest.iter()
                  if etree.QName(node).localname == "item"}
-        if len(image_ids) != 12 or not image_ids <= items.keys():
-            raise ValueError("Expected eleven report figures plus the form image")
+        if len(image_ids) != 15 or not image_ids <= items.keys():
+            raise ValueError("Expected fourteen report figures plus the form image")
+        figure_numbers = []
+        for paragraph in list(section):
+            caption_text = "".join(node.text or "" for node in paragraph.iter()
+                                   if etree.QName(node).localname == "t")
+            match = re.match(r"그림 (\d+)\.", caption_text)
+            if match and paragraph.get("paraPrIDRef") == "27":
+                figure_numbers.append(int(match.group(1)))
+        if figure_numbers != list(range(1, 15)):
+            raise ValueError(f"Report figure numbers are out of order: {figure_numbers}")
         report_tables = [node for node in section.iter()
                          if etree.QName(node).localname == "tbl"
                          and (node.get("id") or "").startswith("210000")]

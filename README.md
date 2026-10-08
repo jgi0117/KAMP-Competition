@@ -14,7 +14,7 @@
 
 최초 실행 전 루트에서 `python -m pip install -r requirements.txt`로 공통 환경을 설치합니다. 대시보드는 저장된 Test 703시간을 재생하며 실시간 예측을 수행하지 않습니다. 실행 후 `http://127.0.0.1:8050`을 엽니다.
 
-결과보고서의 근거표, EDA·모델 평가 그림 11개, 편집 가능한 모델별 Grid Search·성능·재현성 표 6개, HWPX 생성과 검증을 한 명령으로 실행합니다. 저장된 대시보드 화면을 갱신할 때는 Playwright Chromium을 설치하고 `--capture-dashboard`를 붙입니다.
+결과보고서의 근거표, EDA·모델 평가·대시보드 그림 14개, 편집 가능한 모델별 Grid Search·성능·재현성 표 6개, HWPX 생성과 검증을 한 명령으로 실행합니다. 저장된 대시보드 화면 네 장을 갱신할 때는 Playwright Chromium을 설치하고 `--capture-dashboard`를 붙입니다.
 
 ```powershell
 python -m pip install -r requirements.txt
@@ -89,4 +89,4 @@ python -m playwright install chromium
 python scripts/capture_dashboard.py
 ```
 
-캡처는 `docs/report/figures/03_dashboard.png`에 저장됩니다.
+캡처는 `docs/report/figures/`의 `03_dashboard.png`, `12_dashboard_causes.png`, `13_dashboard_model.png`, `14_dashboard_actions.png`에 저장됩니다.

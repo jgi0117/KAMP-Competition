@@ -44,9 +44,11 @@ def main() -> None:
     run("make_report_figures.py")
     if args.capture_dashboard:
         run("capture_dashboard.py")
-    screenshot = ROOT / "docs/report/figures/03_dashboard.png"
-    if not screenshot.is_file():
-        raise FileNotFoundError(f"Dashboard screenshot is required: {screenshot}")
+    for filename in ("03_dashboard.png", "12_dashboard_causes.png",
+                     "13_dashboard_model.png", "14_dashboard_actions.png"):
+        screenshot = ROOT / "docs/report/figures" / filename
+        if not screenshot.is_file():
+            raise FileNotFoundError(f"Dashboard screenshot is required: {screenshot}")
     run("fill_result_report.py")
     run("verify_report.py")
 

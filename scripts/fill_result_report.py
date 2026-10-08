@@ -198,7 +198,7 @@ def report_tables(scores):
         ["트리 학습", "python scripts/train_tree_models.py --models lightgbm xgboost --n-jobs 8", "data/·model_search/", "results/tree_models/"],
         ["5개 모델 비교", "python scripts/build_model_comparison.py", "neural/results/·results/tree_models/", "results/model_comparison.csv"],
         ["대시보드", "python dashboard/app.py", "저장된 Test 예측", "127.0.0.1:8050"],
-        ["화면 캡처", "python scripts/capture_dashboard.py", "Dash 화면", "03_dashboard.png"],
+        ["화면 캡처", "python scripts/capture_dashboard.py", "Dash의 4개 화면", "대시보드 PNG 4개"],
         ["제출물 재생성", "python scripts/reproduce_submission.py --capture-dashboard", "전처리·모델 결과", "근거표·도표·HWPX 검증"],
     ]
     specs.append((5, 6, "표 6. 전처리부터 제출물까지의 실행 명령·입력·산출물",
@@ -354,9 +354,12 @@ def fill():
             (1, 7, "05_grid_search.png", "그림 6. 신경망 단계별 탐색과 트리 전체 조합의 검증 결과"),
             (1, 15, "01_model_comparison.png", "그림 7. 다섯 후보의 RMSE와 피크 경보 F1"),
             (2, 4, "06_feature_interaction.png", "그림 8. 변수 묶음 중요도와 생산량·조업 시간의 교차 분석"),
-            (2, 8, "07_error_conditions.png", "그림 9. 시간대별 오경보 및 미탐지 집중 구간"),
-            (2, 7, "02_peak_timeline.png", "그림 10. 피크 집중 기간의 실측·예측·경보"),
-            (3, 7, "03_dashboard.png", "그림 11. 3σ 관리상·하한과 이탈을 표시한 Dash 대시보드"),
+            (2, 7, "02_peak_timeline.png", "그림 9. 피크 집중 기간의 실측·예측·경보"),
+            (2, 8, "07_error_conditions.png", "그림 10. 시간대별 오경보 및 미탐지 집중 구간"),
+            (3, 5, "03_dashboard.png", "그림 11. 1시간 선행 예측과 3σ 관리구간을 표시한 관제 화면"),
+            (3, 8, "13_dashboard_model.png", "그림 12. 동일 Test 703시간의 모델 성능·경보 오류 비교 화면"),
+            (3, 9, "12_dashboard_causes.png", "그림 13. 두 트리 후보의 시점별 변수 기여도 점검 화면"),
+            (3, 10, "14_dashboard_actions.png", "그림 14. 미탐지·오경보 사례와 검토 체크리스트 화면"),
         ]
         def add_figures(chapter, line_index, caption_template, picture_template):
             for number, (target, target_index, filename, caption) in enumerate(figures, start=1):
@@ -382,6 +385,8 @@ def fill():
                 new_children.append(caption_p)
         for n, position in enumerate(headings):
             heading = deepcopy(children[position])
+            if not text_of(heading).startswith("□ "):
+                set_text(heading, "□ " + text_of(heading))
             heading.set("paraPrIDRef", "43")
             new_children.append(heading)
             block_end = headings[n + 1] if n + 1 < len(headings) else 58
@@ -452,7 +457,8 @@ def fill():
                 target.write(ROOT / "docs/report/figures" / filename, f"BinData/{filename}")
         review = ["# OKM 제조공정 전력 피크 예측: 심사기준별 결과보고서", ""]
         for number, (position, chapter) in enumerate(zip(headings, chapters), start=1):
-            review.extend([f"## {text_of(children[position])}", ""])
+            title = text_of(children[position])
+            review.extend([f"## {title if title.startswith('□ ') else '□ ' + title}", ""])
             for line_index, line in enumerate(chapter):
                 review.extend([line, ""])
                 for target, target_index, filename, caption in figures:

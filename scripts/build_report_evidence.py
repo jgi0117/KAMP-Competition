@@ -6,7 +6,7 @@ import sys
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import f1_score, mean_absolute_error, mean_squared_error, precision_score, recall_score
+from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,30 +14,46 @@ OUT = ROOT / "docs/report/evidence"
 sys.path.insert(0, str(ROOT))
 from neural import grid_search as deep_search  # noqa: E402
 from neural.core import data_pipeline as dp  # noqa: E402
-from neural.core.evaluate import peak_probability  # noqa: E402
+from neural.core.evaluate import choose_alert_cutoff, evaluate_alerts, peak_probability  # noqa: E402
 
 
-def baseline(actual, predicted, threshold=177.0):
-    truth = actual >= threshold
-    alarm = predicted >= threshold
+def baseline(actual, predicted, validation_actual, validation_predicted, threshold=177.0):
+    """Choose the alarm cutoff on validation, then score the held-out Test."""
+    sigma = float(np.std(validation_actual - validation_predicted, ddof=1))
+    cutoff = choose_alert_cutoff(
+        validation_actual,
+        peak_probability(validation_predicted, sigma, threshold),
+        threshold,
+    )
+    alerts = evaluate_alerts(
+        actual, peak_probability(predicted, sigma, threshold), threshold, cutoff,
+    )
     return {
         "rmse": float(np.sqrt(mean_squared_error(actual, predicted))),
         "mae": float(mean_absolute_error(actual, predicted)),
-        "f1": float(f1_score(truth, alarm)),
-        "recall": float(recall_score(truth, alarm)),
-        "precision": float(precision_score(truth, alarm, zero_division=0)),
+        "f1": float(alerts["alert_f1"]),
+        "recall": float(alerts["alert_recall"]),
+        "precision": float(alerts["alert_precision"]),
+        "sigma": sigma,
+        "alert_cutoff": float(cutoff),
     }
 
 
-def diagnostics(clean, test):
+def diagnostics(clean, validation, test):
     raw = pd.read_csv(ROOT / "data/okm_augumented_2021.csv", encoding="utf-8-sig")
     clean_file = pd.read_csv(ROOT / "data/okm_cleaned_2021.csv", encoding="utf-8-sig")
     timeline = clean.set_index("datetime")
     actual = test.actual.to_numpy()
+    validation_actual = validation.actual.to_numpy()
     baselines = {}
     for hours in (1, 168):
         prediction = timeline[dp.TARGET_COLUMN].shift(hours).reindex(test.datetime).to_numpy()
-        baselines[f"lag{hours}"] = baseline(actual, prediction)
+        validation_prediction = timeline[dp.TARGET_COLUMN].shift(hours).reindex(
+            validation.datetime
+        ).to_numpy()
+        baselines[f"lag{hours}"] = baseline(
+            actual, prediction, validation_actual, validation_prediction,
+        )
     return {
         "raw_rows": len(raw), "clean_rows": len(clean_file),
         "raw_columns": len(raw.columns), "clean_columns": len(clean_file.columns),
@@ -142,7 +158,9 @@ def main():
     clean = dp.load_data()
     test = pd.read_csv(ROOT / "neural/results/final/test_predictions.csv", encoding="utf-8-sig")
     test["datetime"] = pd.to_datetime(test.datetime)
-    info = diagnostics(clean, test)
+    validation = pd.read_csv(ROOT / "neural/results/final/val_predictions.csv", encoding="utf-8-sig")
+    validation["datetime"] = pd.to_datetime(validation.datetime)
+    info = diagnostics(clean, validation, test)
     (OUT / "data_diagnostics.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
     grid = grid_evidence()
     joined, interaction, hot, hourly, misses = condition_analysis(clean, test)
