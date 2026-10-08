@@ -18,16 +18,25 @@ def run(script: str, *args: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--train-trees", action="store_true",
-                        help="Complete both 108-candidate searches and refit the tree models")
+                        help="Reuse completed searches and refit both tree models")
     parser.add_argument("--n-jobs", type=int, default=8)
+    parser.add_argument(
+        "--force-tree-search",
+        action="store_true",
+        help="With --train-trees, ignore saved grid-search CSVs and rerun all candidate/folds",
+    )
     parser.add_argument("--capture-dashboard", action="store_true",
                         help="Refresh the dashboard screenshot using Playwright")
     args = parser.parse_args()
 
     run("verify_cleaned_data.py")
+    if args.force_tree_search and not args.train_trees:
+        parser.error("--force-tree-search requires --train-trees")
     if args.train_trees:
-        run("train_tree_models.py", "--models", "lightgbm", "xgboost",
-            "--n-jobs", str(args.n_jobs))
+        train_args = ["--models", "lightgbm", "xgboost", "--n-jobs", str(args.n_jobs)]
+        if args.force_tree_search:
+            train_args.append("--force-search")
+        run("train_tree_models.py", *train_args)
     run("build_model_comparison.py")
     run("build_report_evidence.py")
     run("analyze_feature_importance.py")

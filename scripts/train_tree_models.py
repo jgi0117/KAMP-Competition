@@ -104,16 +104,25 @@ def atomic_csv(frame: pd.DataFrame, path: Path):
     temporary.replace(path)
 
 
-def search(name, X, y, indices, keep, folds, output, n_jobs):
+def search(name, X, y, indices, keep, folds, output, n_jobs, force_search=False):
     path = output / "grid_search" / f"{name}.csv"
-    previous = pd.read_csv(path, encoding="utf-8-sig") if path.exists() else pd.DataFrame()
+    previous = (
+        pd.read_csv(path, encoding="utf-8-sig")
+        if path.exists() and not force_search
+        else pd.DataFrame()
+    )
     rows = previous.to_dict("records")
-    done = set(zip(previous.get("candidate", []), previous.get("fold", [])))
+    done = set(zip(
+        previous.get("candidate", []),
+        previous.get("fold", []),
+        previous.get("params", []),
+    ))
     candidates = list(candidate_grid(name))
     print(f"{name}: {len(candidates)} candidates × {len(folds)} folds", flush=True)
     for candidate_number, params in enumerate(candidates, start=1):
+        params_json = json.dumps(params, sort_keys=True)
         for split in folds:
-            key = (candidate_number, split.name)
+            key = (candidate_number, split.name, params_json)
             if key in done:
                 continue
             train, evaluate = split_indices(indices, keep, split)
@@ -130,7 +139,7 @@ def search(name, X, y, indices, keep, folds, output, n_jobs):
                 "n_features": len(dp.FEATURE_COLUMNS),
                 "n_train": len(train),
                 "n_eval": len(evaluate),
-                "params": json.dumps(params, sort_keys=True),
+                "params": params_json,
                 "elapsed_seconds": round(time.perf_counter() - started, 2),
                 **metrics,
             }
@@ -144,7 +153,10 @@ def search(name, X, y, indices, keep, folds, output, n_jobs):
                 flush=True,
             )
     detail = pd.DataFrame(rows)
-    completed = detail.groupby("candidate").filter(lambda group: len(group) == len(folds))
+    detail = detail.drop_duplicates(["candidate", "params", "fold"], keep="last")
+    completed = detail.groupby(["candidate", "params"]).filter(
+        lambda group: group["fold"].nunique() == len(folds)
+    )
     summary = completed.groupby(["candidate", "params"], as_index=False).agg(
         rmse=("rmse", "mean"),
         rmse_std=("rmse", "std"),
@@ -230,6 +242,11 @@ def main():
     parser.add_argument("--out", type=Path, default=ROOT / "results" / "tree_models")
     parser.add_argument("--models", nargs="+", choices=tuple(GRID), default=["lightgbm", "xgboost"])
     parser.add_argument("--n-jobs", type=int, default=min(8, os.cpu_count() or 1))
+    parser.add_argument(
+        "--force-search",
+        action="store_true",
+        help="Ignore saved grid-search CSVs and rerun every candidate/fold",
+    )
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     df = dp.load_data(args.data)
@@ -255,7 +272,7 @@ def main():
     summary = []
     for name in args.models:
         params, candidate, complete = search(
-            name, X, y, indices, keep, folds, args.out, args.n_jobs
+            name, X, y, indices, keep, folds, args.out, args.n_jobs, args.force_search
         )
         print(f"{name}: selected candidate {candidate}/{complete}: {params}", flush=True)
         row = evaluate_final(

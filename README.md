@@ -21,7 +21,11 @@ python -m pip install -r requirements.txt
 python scripts/reproduce_submission.py
 ```
 
-트리 모델의 108개 조합×3개 fold 학습까지 다시 실행하려면 `python scripts/reproduce_submission.py --train-trees --n-jobs 8`을 사용합니다. 대시보드 화면을 갱신하려면 `python -m playwright install chromium` 후 `--capture-dashboard`를 추가합니다. 신경망의 4단계 탐색과 평가 명령은 아래 재학습 절에 있습니다.
+`--train-trees`는 완료된 tree grid-search CSV를 재사용하고 최종 모델을 다시 학습합니다.
+108개 후보 × 3개 시간순 fold를 처음부터 다시 탐색하려면
+`python scripts/reproduce_submission.py --train-trees --force-tree-search --n-jobs 8`을 사용합니다.
+
+대시보드 화면을 갱신하려면 `python -m playwright install chromium` 후 `--capture-dashboard`를 추가합니다. 신경망의 4단계 탐색과 평가 명령은 아래 재학습 절에 있습니다.
 
 제출용 본문은 [심사기준별 상세내용](docs/report/심사기준별_상세내용.md)에서 바로 검토할 수 있으며, [HWPX 작성본](docs/report/OKM_경진대회_결과보고서_작성본.hwpx)에 같은 내용과 그림이 들어 있습니다. 그리드 탐색의 후보 수·범위·3개 fold 결과, 최종 후보 선택 기준과 수치, 오경보·미탐지 및 변수 영향 분석을 심사표의 6개 장에 맞춰 기록했습니다.
 
