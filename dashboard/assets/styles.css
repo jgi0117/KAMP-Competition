@@ -3,9 +3,9 @@ body { margin: 0; background: #0e1927; color: #e9f0f4; font-family: Arial, 'Malg
 header { margin-bottom: 28px; } header h1 { margin: 8px 0; font-size: 34px; }
 header p, .panel p, .card-detail { color: #aabcc9; }
 .eyebrow { color: #60d9c5; font-weight: 700; letter-spacing: .1em; }
-.cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
+.cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 18px; }
 .card, .panel { background: #162333; border: 1px solid #30465a; border-radius: 12px; padding: 20px; }
-.card-label { color: #aabcc9; font-size: 14px; }.card-value { font-size: 29px; font-weight: 700; margin: 12px 0 8px; }
+.card-label { color: #aabcc9; font-size: 14px; }.card-value { font-size: 27px; font-weight: 700; margin: 12px 0 8px; }
 .card-detail { font-size: 13px; }.grid { display: grid; grid-template-columns: 2fr 1fr; gap: 18px; }
 .wide { grid-column: span 2; }.panel h2 { margin-top: 0; font-size: 19px; }
 .dash-datepicker { display: inline-block !important; width: auto !important;

@@ -12,8 +12,8 @@ import pandas as pd
 
 
 ROOT = Path(__file__).resolve().parents[1]
-FIGURES = ROOT / "report/figures"
-EVIDENCE = ROOT / "report/evidence"
+FIGURES = ROOT / "docs/report/figures"
+EVIDENCE = ROOT / "docs/report/evidence"
 POWER = "전력_평균_실수"
 PRODUCTION = "생산량"
 WORKERS = "공장인원"

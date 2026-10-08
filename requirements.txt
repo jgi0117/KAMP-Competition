@@ -1,0 +1,27 @@
+# Unified environment: training, evaluation, dashboard, and report generation
+# Verified base: Python 3.12 on Windows
+
+# Data and evaluation
+numpy==2.4.3
+pandas==3.0.1
+scipy>=1.15,<2
+scikit-learn==1.8.0
+joblib>=1.4,<2
+
+# Neural models
+tensorflow==2.21.0
+keras==3.15.1
+
+# Tree models
+xgboost==2.0.3
+lightgbm==4.7.0
+
+# Dashboard and visualization
+dash>=4.4,<5
+plotly>=7.1,<8
+matplotlib>=3.9,<4
+
+# Report generation and dashboard capture
+Pillow>=10,<12
+lxml>=5,<7
+playwright>=1.50,<2

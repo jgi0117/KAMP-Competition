@@ -26,16 +26,16 @@ def main() -> None:
 
     run("verify_cleaned_data.py")
     if args.train_trees:
-        run("train_base9_trees.py", "--models", "lightgbm", "xgboost",
+        run("train_tree_models.py", "--models", "lightgbm", "xgboost",
             "--n-jobs", str(args.n_jobs))
-    run("build_base9_comparison.py")
+    run("build_model_comparison.py")
     run("build_report_evidence.py")
     run("analyze_feature_importance.py")
     run("build_eda_evidence.py")
     run("make_report_figures.py")
     if args.capture_dashboard:
         run("capture_dashboard.py")
-    screenshot = ROOT / "report/figures/03_dashboard.png"
+    screenshot = ROOT / "docs/report/figures/03_dashboard.png"
     if not screenshot.is_file():
         raise FileNotFoundError(f"Dashboard screenshot is required: {screenshot}")
     run("fill_result_report.py")

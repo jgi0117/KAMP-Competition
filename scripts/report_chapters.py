@@ -7,7 +7,7 @@ import pandas as pd
 
 
 def build_chapters(root: Path, scores: pd.DataFrame):
-    evidence = root / "report/evidence"
+    evidence = root / "docs/report/evidence"
     audit = json.loads((evidence / "data_diagnostics.json").read_text(encoding="utf-8"))
     eda = json.loads((evidence / "eda_summary.json").read_text(encoding="utf-8"))
     grid = pd.read_csv(evidence / "grid_search_summary.csv", encoding="utf-8-sig")
@@ -59,14 +59,14 @@ def build_chapters(root: Path, scores: pd.DataFrame):
             f"- 같은 Test 703시간에서 전주 같은 시각의 전력을 예측값으로 쓰는 기준선의 RMSE는 {base['rmse']:.2f} kW, MAE는 {base['mae']:.2f} kW, 피크 F1은 {base['f1']:.3f}이다. 이를 다섯 후보의 실효 개선 기준으로 삼았다.",
             "- seed 42와 3개 시간순 fold를 공통으로 적용했다. 각 후보의 검증 RMSE 평균 최솟값에서 2% 이내인 설정을 모은 다음 피크 시각 MAE가 가장 낮은 설정을 채택했다. 동률에서는 전체 RMSE가 낮은 설정을 우선한다. 경보 확률의 기준값도 검증 자료의 F1으로 정했다.",
             "◦ 2.2 LSTM·TCN의 4단계 탐색",
-            "- LSTM은 입력 길이 24·48·72·168시간(4개), 은닉 유닛 32·64·128과 층 1·2(6개), 학습률 0.0001·0.0003·0.001과 dropout 0·0.1·0.2·0.3(12개), 배치 16·32·64(3개)를 단계별로 탐색했다. 앞 단계 선택 설정을 다음 단계의 기준으로 고정했으며 중복 설정을 합쳐 22개 고유 후보·66개 fold 결과를 기록했다.",
+            "- LSTM은 입력 길이 → 은닉 유닛·층 → 학습률·dropout → 배치 크기의 4단계로 탐색했다. 단계별 전체 후보값과 최종 선택값은 표 1에 한눈에 비교하도록 정리했다. 중복 설정을 합쳐 22개 고유 후보·66개 fold 결과를 기록했다.",
             f"- LSTM의 단계별 선택 검증 RMSE는 {stage('lstm',1).validation_rmse:.2f} → {stage('lstm',2).validation_rmse:.2f} → {stage('lstm',3).validation_rmse:.2f} → {stage('lstm',4).validation_rmse:.2f} kW였다. 최종 입력 168시간, 유닛 128, 2층, dropout 0.3, 학습률 0.001, 배치 16을 선택했다. 최종 설정의 검증 피크 MAE는 {stage('lstm',4).validation_peak_mae:.2f} kW다.",
-            "- TCN은 입력 길이 24·48·72·168시간(4개), 필터 32·64·128 × 커널 2·3·5 × 팽창 패턴 auto·auto+1(18개), 학습률 0.0001·0.0003·0.001 × dropout 0·0.1·0.2·0.3(12개), 배치 16·32·64(3개)를 같은 순서로 탐색했다. 중복 설정을 합쳐 34개 고유 후보·102개 fold 결과를 기록했다.",
+            "- TCN도 입력 길이 → 필터·커널·팽창 패턴 → 학습률·dropout → 배치 크기 순으로 탐색했다. 표 2에 파라미터별 후보값, 34개 고유 후보·102개 fold, 최종 설정을 따로 정리해 선택 과정을 빠르게 파악할 수 있게 했다.",
             f"- TCN의 단계별 선택 검증 RMSE는 {stage('tcn',1).validation_rmse:.2f} → {stage('tcn',2).validation_rmse:.2f} → {stage('tcn',3).validation_rmse:.2f} → {stage('tcn',4).validation_rmse:.2f} kW였다. 입력 24시간, 필터 128, 커널 2, 팽창 auto+1, dropout 0.3, 학습률 0.001, 배치 32를 선택했다.",
             "◦ 2.3 트리 모델의 전체 조합 탐색",
-            "- XGBoost는 max_depth 3·5·7, 학습률 0.01·0.05·0.1, 트리 수 200·500·1000, min_child_weight 1·5, colsample_bytree 0.8·1.0의 108개 조합을 모두 평가했다. 각 조합에 3개 fold를 적용해 324개 fold 결과를 저장했다.",
+            "- XGBoost는 max_depth 3·5·7, 학습률 0.01·0.05·0.1, 트리 수 200·500·1000, min_child_weight 1·5, colsample_bytree 0.8·1.0의 108개 조합을 모두 평가했다. 각 조합에 3개 fold를 적용한 324개 fold 결과와 선택값을 표 3에 정리했다.",
             f"- XGBoost 최저 검증 RMSE는 {tree('xgboost').lowest_rmse:.2f} kW였고 2% 범위에 {int(tree('xgboost').rmse_2pct_candidates)}개 후보가 남았다. 피크 MAE {tree('xgboost').validation_peak_mae:.2f} kW인 28번 후보(max_depth 3, 학습률 0.1, 트리 200, min_child_weight 5, 열 표본 1.0)를 선택했다. 선택 후보의 검증 RMSE는 {tree('xgboost').validation_rmse:.2f} kW다.",
-            "- LightGBM은 num_leaves 7·15·31, 학습률 0.01·0.05·0.1, 트리 수 200·500·1000, min_child_samples 20·50, colsample_bytree 0.8·1.0의 108개 조합×3 fold를 평가했다.",
+            "- LightGBM은 num_leaves 7·15·31, 학습률 0.01·0.05·0.1, 트리 수 200·500·1000, min_child_samples 20·50, colsample_bytree 0.8·1.0의 108개 조합×3 fold를 평가했으며 전체 범위와 선택값은 표 4에 정리했다.",
             f"- LightGBM 최저 검증 RMSE는 {tree('lightgbm').lowest_rmse:.2f} kW였고 2% 범위에 {int(tree('lightgbm').rmse_2pct_candidates)}개 후보가 남았다. 피크 MAE {tree('lightgbm').validation_peak_mae:.2f} kW인 55번 후보(잎 15, 학습률 0.05, 트리 500, 최소 자식 표본 50, 열 표본 0.8)를 선택했다. 선택 후보의 검증 RMSE는 {tree('lightgbm').validation_rmse:.2f} kW다.",
             "◦ 2.4 앙상블과 최종 Test 평가",
             f"- 검증 MSE의 역수로 LSTM {weights.loc['lstm','weight']:.3f}, TCN {weights.loc['tcn','weight']:.3f}의 가중치를 정했다. 앙상블 검증 RMSE는 {settings.loc['ensemble','val_rmse']:.2f} kW, 검증 경보 F1은 {settings.loc['ensemble','val_alert_f1']:.3f}이었다. 검증 잔차 표준편차 {settings.loc['ensemble','sigma']:.2f} kW를 이용해 177 kW 초과 확률을 계산하고 경보 기준 {settings.loc['ensemble','alert_cutoff']:.2f}를 선택했다.",
@@ -88,11 +88,13 @@ def build_chapters(root: Path, scores: pd.DataFrame):
         ],
         [
             "◦ 4.1 현장 의사결정 흐름",
-            "- 시간별 전력·생산·기상 데이터가 수집되면 정제 규칙을 적용하고, 대시보드에 예상 전력(kW), 177 kW 피크 확률, 경보 상태를 표시한다. 담당자는 경보 시각의 최근 계측 추세와 다음 작업 지시를 함께 확인한다.",
-            "- 피크 확률 0.20 이상인 경우 생산계획 담당자와 에너지 담당자에게 사전 확인 항목을 제시한다. 부하가 큰 작업의 시작 시점 분산, 비필수 설비의 가동 시간 조정, 계획된 생산량과 계측값의 차이 확인을 순서대로 검토한다.",
+            f"- 시간별 전력·생산·기상 데이터를 정제한 후 대시보드에 예상 전력, 177 kW 피크 확률, 관리상한(UCL)과 관리하한(LCL)을 함께 표시한다. 관리한계에는 Test 정보를 쓰지 않고 검증 구간 앙상블 잔차에서 구한 σ={settings.loc['ensemble','sigma']:.2f} kW를 고정해 적용한다.",
+            f"- 시각 t의 관리상한은 예측값(t)+3σ, 관리하한은 max(0, 예측값(t)−3σ)로 계산한다. 현재 관리폭은 예측값 중심으로 ±{3 * settings.loc['ensemble','sigma']:.2f} kW이다. 정상 오차가 근사적으로 정규분포를 따른다면 약 99.7%가 이 구간에 들어오므로, 일시적 잡음보다 의미 있는 이탈을 선별하는 기준이 된다.",
+            "- 실측이 UCL을 넘으면 예상보다 큰 부하 급증으로 보고, LCL 아래면 비정상 설비 정지·계측 오류·생산계획 변경 가능성을 점검한다. 관리한 내부에서도 177 kW 초과 확률이 0.20 이상이면 수요 피크 경보를 별도로 유지해, 공정 이상 감지와 최대수요 관리를 서로 보완한다.",
+            "- UCL 이탈 시에는 ① 최근 계측값과 센서 상태 확인, ② 당시 생산량·작업 지시 대조, ③ 부하가 큰 작업의 시작 시점 분산, ④ 품질·안전에 영향이 없는 비필수 설비의 가동 시간 조정 순으로 대응한다. 연속 2회 이상 이탈은 단발성 경보보다 높은 우선순위로 확인한다.",
             "◦ 4.2 조치 우선순위와 운영 기록",
             "- 오전 조업 시작과 직전 시간 생산량 1,000 초과가 겹치는 시각을 우선 확인한다. 오경보가 잦은 09·11·13시에는 예측값만으로 설비를 조정하기보다 작업 계획 및 현장 계측 확인을 함께 수행한다. 생산 안전과 품질 조건을 만족하는 조정안만 작업자가 승인한다.",
-            "- 대시보드는 실측·앙상블 예측·피크 기준·경보를 시간축에 표시하고 5개 후보의 Test 오차를 한 화면에 비교한다. 담당자는 경보 발생·확인·조치·실제 피크 여부를 기록해 다음 점검 때 미탐지와 오경보를 되짚을 수 있다.",
+            "- 대시보드는 실측·앙상블 예측·3σ 음영·UCL/LCL·3σ 이탈·피크 경보를 한 시간축에 표시하고 5개 후보의 Test 오차를 한 화면에 비교한다. 담당자는 이탈 시각, 상·하한 구분, 원인 확인, 조치, 정상화 시각을 기록해 다음 점검 때 경보 타당성을 되짚는다.",
             f"- 평가 구간에서 앙상블은 피크 49시간 중 48시간을 포착하고 전주 같은 시각 기준선 대비 RMSE를 {gain:.1%} 낮췄다. 현장 실증에서는 피크 재현율, 불필요 확인 건수, 작업 변경 횟수, 실제 최대수요 전력 변화를 함께 관리한다.",
         ],
         [
@@ -105,11 +107,11 @@ def build_chapters(root: Path, scores: pd.DataFrame):
         ],
         [
             "◦ 6.1 실행 환경과 파일 구성",
-            "- data/의 원본·정제 CSV, src/preprocessing.py의 정제 규칙, model_search/의 모델별 탐색 범위, neural/core/의 신경망 구현·평가, neural/의 LSTM·TCN 탐색과 최종 학습, scripts/의 트리 탐색·비교·분석, results/의 후보별 결과, dashboard/와 report/를 순서대로 배치했다.",
-            "- Python 환경은 requirements-tree.txt와 requirements-report.txt에 명시했다. seed 42, 데이터 해시, 9개 변수 목록, 피크 기준, 후보 선택 규칙을 results/base9_tree/manifest.json에 기록했다.",
+            "- data/의 원본·정제 CSV, src/preprocessing.py의 정제 규칙, model_search/의 모델별 탐색 범위, neural/core/의 신경망 구현·평가, scripts/의 학습·비교·보고서 자동화, results/의 모델 결과, docs/report·docs/presentation의 최종 문서를 역할별로 배치했다.",
+            "- Python 통합 환경은 루트 requirements.txt 하나에 명시했다. seed 42, 데이터 해시, 9개 공통 입력변수 목록, 피크 기준, 5개 모델의 후보 선택 규칙은 결과 manifest에 기록했다.",
             "◦ 6.2 전처리부터 제출물 생성까지",
-            "- python scripts/verify_cleaned_data.py 는 원본 6,168행에서 정제 결과를 다시 만들고 제공 CSV의 모든 열과 비교한다. python scripts/train_base9_trees.py --models lightgbm xgboost 는 두 트리의 108개×3 fold 결과와 선택 모델을 생성한다.",
-            "- python scripts/build_base9_comparison.py 는 5개 모델의 Test 시각·실측값 일치와 트리 전체 탐색 완료를 검사한다. 이어서 build_report_evidence.py, analyze_feature_importance.py, build_eda_evidence.py, make_report_figures.py, fill_result_report.py, verify_report.py 순으로 진단표·시각화·HWPX를 생성하고 확인한다. capture_dashboard.py는 실제 Dash 화면을 촬영해 보고서 그림으로 저장한다.",
-            "- python scripts/reproduce_submission.py 명령으로 정제 검증, 결과 비교, 근거표·시각화·HWPX 생성 및 파일 검증을 연속 실행한다. --train-trees 옵션으로 두 트리의 탐색과 재학습을 포함하고, --capture-dashboard 옵션으로 실제 화면 캡처를 갱신한다. 후보별 설정과 fold 결과 CSV, Test 예측, 모델 파일을 함께 보관해 선택 과정을 추적할 수 있다.",
+            "- 정제 검증 스크립트는 원본 6,168행에서 정제 결과를 다시 만들고 제공 CSV의 모든 열과 비교한다. 트리 모델 학습 스크립트는 XGBoost와 LightGBM의 108개 조합×3 fold 결과와 선택 모델을 생성한다.",
+            "- 5개 모델 비교 검증 스크립트는 Test 시각·실측값 일치와 트리 전체 탐색 완료를 검사한다. 이어서 근거 생성, 변수 중요도, EDA, 도표, HWPX 생성·검증 순으로 실행한다. 대시보드 캡처 스크립트는 실제 Dash 화면을 촬영해 보고서 그림으로 저장한다.",
+            "- 표 6은 목적별 실행 명령과 입력·산출물을 한 흐름으로 정리한다. python scripts/reproduce_submission.py는 정제 검증, 결과 비교, 근거표·시각화·HWPX 생성과 검증을 연속 실행한다. --train-trees는 두 트리의 탐색·재학습을, --capture-dashboard는 실제 화면 캡처 갱신을 포함한다. 후보 설정, fold 결과 CSV, Test 예측, 모델 파일을 함께 보관해 선택 과정을 추적할 수 있다.",
         ],
     ]

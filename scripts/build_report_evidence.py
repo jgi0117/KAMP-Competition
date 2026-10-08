@@ -10,7 +10,7 @@ from sklearn.metrics import f1_score, mean_absolute_error, mean_squared_error, p
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "report/evidence"
+OUT = ROOT / "docs/report/evidence"
 sys.path.insert(0, str(ROOT))
 from neural import grid_search as deep_search  # noqa: E402
 from neural.core import data_pipeline as dp  # noqa: E402
@@ -69,7 +69,7 @@ def grid_evidence():
                          "validation_rmse": float(winner.rmse),
                          "validation_peak_mae": float(winner.peak_mae)})
     for model in ("xgboost", "lightgbm"):
-        ranked = pd.read_csv(ROOT / f"results/base9_tree/grid_search/{model}_summary.csv")
+        ranked = pd.read_csv(ROOT / f"results/tree_models/grid_search/{model}_summary.csv")
         lowest = ranked.loc[ranked.rmse.idxmin()]
         finalists = ranked.loc[ranked.rmse <= lowest.rmse * 1.02]
         winner = finalists.sort_values(["peak_mae", "rmse"]).iloc[0]

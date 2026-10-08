@@ -227,7 +227,7 @@ def hash_file(path: Path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, default=ROOT / "data" / "okm_cleaned_2021.csv")
-    parser.add_argument("--out", type=Path, default=ROOT / "results" / "base9_tree")
+    parser.add_argument("--out", type=Path, default=ROOT / "results" / "tree_models")
     parser.add_argument("--models", nargs="+", choices=tuple(GRID), default=["lightgbm", "xgboost"])
     parser.add_argument("--n-jobs", type=int, default=min(8, os.cpu_count() or 1))
     args = parser.parse_args()

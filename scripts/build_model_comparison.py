@@ -8,7 +8,7 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 NEURAL_RESULTS = ROOT / "neural" / "results" / "final"
-TREE_RESULTS = ROOT / "results" / "base9_tree"
+TREE_RESULTS = ROOT / "results" / "tree_models"
 
 
 def main():
@@ -45,7 +45,7 @@ def main():
         "model", "source", "seed", "n_features", "lookback", "rmse", "mae", "r2",
         "alert_f1", "alert_recall", "alert_precision", "fn", "fp", "pr_auc",
     ]
-    output = ROOT / "results" / "base9_comparison.csv"
+    output = ROOT / "results" / "model_comparison.csv"
     output.parent.mkdir(parents=True, exist_ok=True)
     rows[columns].to_csv(output, index=False, encoding="utf-8-sig")
     print(rows[columns].to_string(index=False))

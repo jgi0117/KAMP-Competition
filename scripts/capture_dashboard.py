@@ -14,7 +14,7 @@ from app import app  # noqa: E402
 
 
 def main():
-    output = ROOT / "report/figures/03_dashboard.png"
+    output = ROOT / "docs/report/figures/03_dashboard.png"
     output.parent.mkdir(parents=True, exist_ok=True)
     server = make_server("127.0.0.1", 0, app.server)
     thread = Thread(target=server.serve_forever, daemon=True)
@@ -25,7 +25,7 @@ def main():
                 browser = playwright.chromium.launch(channel="chrome", headless=True)
             except Exception:
                 browser = playwright.chromium.launch(headless=True)
-            page = browser.new_page(viewport={"width": 1600, "height": 1000}, device_scale_factor=1)
+            page = browser.new_page(viewport={"width": 1920, "height": 1000}, device_scale_factor=1)
             page.goto(f"http://127.0.0.1:{server.server_port}/", wait_until="networkidle")
             page.locator("#timeline .js-plotly-plot").wait_for()
             page.locator("#ranking .js-plotly-plot").wait_for()
