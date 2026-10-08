@@ -90,3 +90,11 @@ python scripts/capture_dashboard.py
 ```
 
 캡처는 `docs/report/figures/`의 `03_dashboard.png`, `12_dashboard_causes.png`, `13_dashboard_model.png`, `14_dashboard_actions.png`에 저장됩니다.
+
+## 소스코드 제출 ZIP
+
+```powershell
+python scripts/package_source_submission.py
+```
+
+`outputs/OKM_소스코드_제출.zip`에 raw·정제 데이터, 전처리부터 대시보드까지의 코드, 저장된 모델 결과, Test 703시간의 다섯 모델 통합 예측 CSV, 공통 `requirements.txt`, 실행 README와 SHA-256 목록을 묶습니다. ZIP의 `README.md` 순서대로 압축 해제 위치에서 재현할 수 있습니다.
