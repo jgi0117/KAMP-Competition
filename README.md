@@ -97,4 +97,4 @@ python scripts/capture_dashboard.py
 python scripts/package_source_submission.py
 ```
 
-`outputs/OKM_소스코드_제출.zip`에 raw·정제 데이터, 전처리부터 대시보드까지의 코드, 저장된 모델 결과, Test 703시간의 다섯 모델 통합 예측 CSV, 공통 `requirements.txt`, 실행 README와 SHA-256 목록을 묶습니다. ZIP의 `README.md` 순서대로 압축 해제 위치에서 재현할 수 있습니다.
+`outputs/OKM_소스코드_제출.zip`에 raw·정제 데이터, 전처리부터 대시보드까지의 코드, 저장된 모델 결과, Test 703시간의 다섯 모델 통합 예측 CSV, 공통 `requirements.txt`, 실행 README와 SHA-256 목록을 묶습니다. **Windows의 Python 3.12.x** 환경에서 확인했으며, ZIP의 `README.md`에 가상환경 생성부터 대시보드 실행까지 명령을 순서대로 적었습니다.

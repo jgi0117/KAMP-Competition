@@ -15,24 +15,30 @@ ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "outputs" / "OKM_소스코드_제출.zip"
 PACKAGE = "OKM_소스코드_제출"
 DIRECTORIES = (
-    "data", "src", "model_search", "neural", "scripts", "dashboard",
-    "notebooks/kjh", "results", "docs/templates", "docs/report/evidence",
-    "docs/report/figures",
+    "data", "src", "model_search", "neural", "dashboard",
+    "notebooks/kjh", "results", "docs/report/evidence",
 )
-SINGLE_FILES = ("requirements.txt", "docs/model-comparison.md")
+SINGLE_FILES = (
+    "requirements.txt", "docs/model-comparison.md",
+    "scripts/verify_cleaned_data.py", "scripts/train_tree_models.py",
+    "scripts/build_model_comparison.py", "scripts/build_report_evidence.py",
+    "scripts/analyze_feature_importance.py", "scripts/build_eda_evidence.py",
+    "scripts/verify_dashboard.py", "scripts/capture_dashboard.py",
+    "scripts/package_source_submission.py",
+)
 EXCLUDED_NAMES = {
     "__pycache__", ".pytest_cache", "mock_data.py", "design_system.md",
     "INTEGRATION_GUIDE.md",
 }
 
 
-README = """# OKM 전력 피크 예측 — 소스코드 제출물
+README = r"""# OKM 전력 피크 예측 — 소스코드 제출물
 
-Python 3.12와 Windows에서 확인한 실행 환경입니다. 모든 명령은 이 README가 있는 폴더에서 실행합니다.
+**확인한 환경: Windows, Python 3.12.x.** 모든 명령은 이 README가 있는 폴더에서 실행합니다.
 
 ## 포함 파일
 
-- `requirements.txt`: 전처리·학습·평가·대시보드·보고서 공통 환경
+- `requirements.txt`: 전처리·학습·평가·대시보드 공통 환경
 - `data/okm_augumented_2021.csv`: 원본 6,168시간 자료
 - `data/okm_cleaned_2021.csv`: 전처리 결과 6,168행 × 22열
 - `src/`, `notebooks/kjh/`: 전처리 코드와 EDA 재현 노트북
@@ -40,22 +46,37 @@ Python 3.12와 Windows에서 확인한 실행 환경입니다. 모든 명령은 
 - `results/`, `neural/results/`: 저장된 그리드 탐색, 모델, 검증·Test 예측과 지표
 - `dashboard/`: 저장된 Test 703시간을 재생하는 Dash 대시보드
 - `test_predictions.csv`: 다섯 모델의 동일 Test 703시간 실측·예측·경보 확률 통합표
-- `docs/templates/`, `docs/report/evidence/`, `docs/report/figures/`: 결과보고서 재생성용 양식과 근거
+- `docs/report/evidence/`: 대시보드와 오류 분석에 쓰는 검증 근거
 - `manifest.json`: ZIP 내부 파일의 SHA-256 해시와 크기
 
-## 빠른 재현
+## 1. Python 3.12 환경 만들기
 
 ```powershell
+py -3.12 --version
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python --version
 python -m pip install -r requirements.txt
+```
+
+`python --version`이 `Python 3.12.x`로 나오는지 확인합니다.
+
+## 2. 전처리부터 결과·대시보드까지 확인
+
+```powershell
 python scripts/verify_cleaned_data.py
 python scripts/build_model_comparison.py
-python scripts/reproduce_submission.py
+python scripts/build_report_evidence.py
+python scripts/analyze_feature_importance.py
+python scripts/build_eda_evidence.py
 python dashboard/app.py
 ```
 
-대시보드는 `http://127.0.0.1:8050`에서 열립니다. 저장된 2021년 Test 결과를 한 시간씩 재생합니다. `Ctrl+C`로 종료합니다.
+첫 명령은 raw CSV로 정제 결과를 다시 만들어 제공한 cleaned CSV의 모든 열을 비교합니다. 다음 명령은 다섯 모델의 동일 Test 시각·실측값과 탐색 결과를 검사해 `results/model_comparison.csv`를 갱신합니다. 나머지 명령은 진단 근거·EDA 그림을 만들고 Dash를 실행합니다.
 
-`reproduce_submission.py`는 제공한 raw 자료와 cleaned 자료의 일치 여부, 저장된 다섯 모델 결과의 시각·실측값 일치, 근거표·그림·HWPX 생성과 HWPX 구조 검증을 차례로 수행합니다. 생성 보고서는 `docs/report/OKM_경진대회_결과보고서_작성본.hwpx`에 저장됩니다.
+대시보드는 `http://127.0.0.1:8050`에서 열립니다. 저장된 2021년 Test 703시간을 한 시간씩 재생합니다. `Ctrl+C`로 종료합니다. 제출된 Test 예측은 루트의 `test_predictions.csv`와 모델별 `neural/results/final/`, `results/tree_models/predictions/`에 있습니다.
+
+브라우저 자동 검증을 실행할 때는 `python -m playwright install chromium`으로 브라우저를 설치한 뒤 `python scripts/verify_dashboard.py`를 실행합니다. 관제·기여도·모델 성능·오류 검토 4개 화면과 1시간 선행 예측 시각을 검사합니다.
 
 ## 학습을 처음부터 실행할 때
 
@@ -70,9 +91,9 @@ python scripts/train_tree_models.py --models lightgbm xgboost --force-search --n
 python scripts/build_model_comparison.py
 ```
 
-신경망 탐색과 트리 전체 그리드 재학습에는 상당한 시간이 필요합니다. 제공된 검증·Test 예측과 탐색 CSV로 보고서와 대시보드는 즉시 재현할 수 있습니다. 저장된 트리 모델 파일은 `results/tree_models/models/`에 있습니다.
+신경망 탐색과 트리 전체 그리드 재학습에는 상당한 시간이 필요합니다. 제공된 검증·Test 예측과 탐색 CSV로 결과 비교와 대시보드는 즉시 재현할 수 있습니다. 저장된 트리 모델 파일은 `results/tree_models/models/`에 있습니다.
 
-브라우저 동작을 검증하려면 Chrome 또는 Playwright Chromium 설치 후 `python scripts/verify_dashboard.py`를 실행합니다. 네 화면을 다시 촬영하려면 `python scripts/capture_dashboard.py`를 실행합니다.
+네 화면을 다시 촬영하려면 `python scripts/capture_dashboard.py`를 실행합니다. 결과 PNG는 `docs/report/figures/`에 생성됩니다.
 """
 
 
@@ -134,6 +155,9 @@ def build() -> Path:
     }
     if not required <= payloads.keys():
         raise ValueError(f"Required submission files missing: {required - payloads.keys()}")
+    if any(name.endswith(".hwpx") or name.endswith("fill_result_report.py")
+           for name in payloads):
+        raise ValueError("The source submission contains a report-generation artifact")
     manifest = {
         "package": PACKAGE,
         "files": {name: {"sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)}
