@@ -17,7 +17,7 @@ python dashboard/app.py
 - 왼쪽 고정 사이드바와 4개 화면 라우팅
 - 사이드바 접기·펼치기와 축소 상태 아이콘 탐색
 - 저장된 Test 실측·예측·3σ 관리한계와 피크 경보의 Plotly 시계열
-- XGBoost와 LightGBM의 Test permutation importance 비교
+- XGBoost와 LightGBM의 시점별 TreeSHAP 기여도 비교
 - 동일 703시간 Test 구간의 실제 후보 모델 성능 비교
 - 저장된 예측의 피크 경보 지표와 FN·FP 오류 히트맵
 - 조치 관리 표와 입력 패널
@@ -34,7 +34,8 @@ python dashboard/app.py
 - 후보 모델 비교: `results/model_comparison.csv`
 - 최종 앙상블 예측: `neural/results/final/test_predictions.csv`
 - 경보 설정·가중치: `neural/results/final/alert_settings.csv`, `ensemble_weights.csv`
-- 변수 중요도·시간대 오류: `docs/report/evidence/*.csv`
+- 전역 permutation importance·시간대 오류 근거: `docs/report/evidence/*.csv`
+- 시점별 기여도: 저장된 두 트리 모델과 `data/okm_cleaned_2021.csv`의 직전 168시간 입력
 - 앱 시작 시 필수 컬럼과 데이터 범위를 검증하며, 누락 시 임의 값으로 대체하지 않는다.
 
 세부 데이터 계약과 운영 전환 범위는
@@ -45,7 +46,7 @@ python dashboard/app.py
 
 - 작동: 화면 이동, 반응형 사이드바, Test 재생·일시정지, 경보음, 시간 범위 선택, 변수 중요도, 오류 사례 검토·세션 메모
 - 미연결: 실시간 모델 추론, 스트리밍 설비 데이터, CSV 내보내기, 영구 저장
-- 변수 중요도는 트리 모델의 전역 permutation importance이며 시점별 SHAP 또는 인과효과가 아니다.
+- 시점별 차트와 상위 변수 표는 각 트리 모델의 네이티브 TreeSHAP을 168개 lag에서 변수별로 합산하며 재생 시각마다 바뀐다. 최종 LSTM+TCN 앙상블의 설명값이나 인과효과는 아니다.
 
 ## 자동 검증
 

@@ -18,7 +18,8 @@ docs/report/evidence/*.csv ─────────────────�
 - `data.py`는 경로 해석, 필수 컬럼 검증, 요약 지표, 차트와 FN·FP 사례를 담당한다.
 - Test 예측은 2021-08-16 00:00부터 2021-09-14 23:00까지 703시간이다.
 - 재생은 저장 결과를 한 시간씩 보여 주며 실시간 추론이 아니다.
-- 변수 중요도는 트리 모델의 전역 permutation importance이고 시점별 SHAP이 아니다.
+- 홈과 기여·점검 화면은 저장된 XGBoost·LightGBM의 네이티브 TreeSHAP을 168시간 lag에서 변수별로 합산하며 재생 시각마다 갱신한다.
+- 보고서의 `grouped_permutation_importance.csv`는 전체 Test 구간의 전역 검증 근거로 별도 유지한다.
 - `mock_data.py`는 과거 프로토타입 추적용으로만 남아 있으며 앱에서 import하지 않는다.
 
 검증은 `python scripts/verify_dashboard.py`로 수행한다. 전체 제출물 재현은 `python scripts/reproduce_submission.py`를 사용한다.

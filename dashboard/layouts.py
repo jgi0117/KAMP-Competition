@@ -13,6 +13,7 @@ from data import (
     cause_figure,
     energy_figure,
     error_heatmap_figure,
+    feature_rows,
     importance_figure,
     model_comparison_figure,
 )
@@ -197,6 +198,22 @@ def status_pill(text: str, tone: str):
     return html.Span(text, className=f"status-pill {tone}")
 
 
+def feature_table_rows(rows):
+    return [
+        html.Div(
+            [
+                html.Span(rank), html.Span(condition),
+                html.Strong(current, className="danger-text"),
+                html.Span(reference),
+                html.Span(("↑  " if "증가" in direction else "↓  ") + direction, className="danger-text"),
+                status_pill(status, tone),
+            ],
+            className="data-row",
+        )
+        for rank, condition, current, reference, direction, status, tone in rows
+    ]
+
+
 def simulation_note(text: str):
     return html.Div([html.Span("i", className="info-dot"), html.Span(text)], className="simulation-note")
 
@@ -204,6 +221,7 @@ def simulation_note(text: str):
 def home_page():
     return html.Main(
         [
+            dcc.Store(id={"type": "page-replay-time", "page": "home"}),
             html.Div(
                 [
                     html.Div(
@@ -261,8 +279,8 @@ def home_page():
                         [
                             html.Div(
                                 [
-                                    html.H3("모델 변수 중요도", id="home-cause-title", className="section-title"),
-                                    html.Span("Test 전체 기준", id="home-analysis-time", className="analysis-time"),
+                                    html.H3("시점별 트리 모델 기여도", id="home-cause-title", className="section-title"),
+                                    html.Span("08/17 00:00 입력", id="home-analysis-time", className="analysis-time"),
                                 ],
                                 className="cause-panel-header",
                             ),
@@ -274,8 +292,8 @@ def home_page():
                             ),
                             html.Div(
                                 [
-                                    html.Span("검증 근거", className="ai-label"),
-                                    html.Span("XGBoost·LightGBM의 Test permutation importance이며 시점별 SHAP이 아닙니다.", id="home-cause-insight"),
+                                    html.Span("모델 근거", className="ai-label"),
+                                    html.Span("저장 트리 모델의 168시간 입력 TreeSHAP을 변수별로 합산했습니다.", id="home-cause-insight"),
                                 ],
                                 className="home-cause-insight",
                             ),
@@ -354,32 +372,33 @@ def action_drawer():
 
 
 def causes_page():
-    rows = FEATURE_ROWS
+    rows = feature_rows()
     return html.Main(
         [
+            dcc.Store(id={"type": "page-replay-time", "page": "causes"}),
             control_page_header(
                 "MODEL EXPLANATION / TEST SET",
                 "변수 중요도 및 오류 조건 점검",
-                [("Permutation importance", "danger"), ("Test 전체 기준", "normal")],
+                [("LOCAL TREESHAP", "danger"), ("재생 시각 기준", "normal")],
             ),
             html.Div(
                 [
                     html.Span("ANALYSIS", className="event-code"),
-                    html.Strong("트리 모델 변수 중요도"),
+                    html.Strong("시점별 트리 모델 기여도"),
                     html.Span("XGBoost + LightGBM"),
                     html.Span("9개 공통 입력변수", className="danger-text"),
-                    html.Span("인과관계가 아닌 예측 민감도", className="event-note"),
+                    html.Span("재생 데이터에 따라 갱신", className="event-note"),
                 ],
                 className="event-strip",
             ),
             html.Div(
                 [
-                    graph_card("모델별 Test permutation importance", cause_figure(360), "cause-main", "cause-detail-chart"),
+                    graph_card("모델별 시점 기여도 · 168시간 입력", cause_figure(360), "cause-main", "cause-detail-chart"),
                     html.Div(
                         [
-                            graph_card("두 트리 모델 평균 permutation importance", importance_figure()),
+                            graph_card("두 트리 모델 평균 시점 기여도", importance_figure(), graph_id="cause-average-chart"),
                             html.Section(
-                                [html.Div([html.H3("분석 해석", className="section-title"), html.Span("MODEL EXPLANATION", className="panel-code")], className="industrial-panel-header"), html.P("특정 변수를 섞었을 때 Test RMSE가 얼마나 증가하는지로 중요도를 계산했습니다. 시점별 SHAP 또는 인과 효과가 아닙니다.", className="insight-copy")],
+                                [html.Div([html.H3("분석 해석", className="section-title"), html.Span("MODEL EXPLANATION", className="panel-code")], className="industrial-panel-header"), html.P("저장된 XGBoost·LightGBM의 TreeSHAP을 168시간 lag 전체에서 입력변수별로 합산했습니다. 양수는 해당 시점 예측을 높이고 음수는 낮춥니다.", className="insight-copy")],
                                 className="panel insight-panel",
                             ),
                         ],
@@ -390,21 +409,18 @@ def causes_page():
             ),
             html.Section(
                 [
-                    html.Div([html.Div([html.H3("검증 중요도 상위 변수", className="section-title"), html.Span("TOP 3 · TEST EVIDENCE", className="panel-code")], className="panel-title-row"), html.Div([html.Button("검증 완료", className="secondary-button", disabled=True), html.Button("보고서 근거", className="danger-button small", disabled=True)])], className="panel-header"),
+                    html.Div([html.Div([html.H3("현재 시점 기여도 상위 변수", className="section-title"), html.Span("TOP 3 · LOCAL TREESHAP", className="panel-code")], className="panel-title-row"), html.Div([html.Button("계산 완료", className="secondary-button", disabled=True), html.Button("모델 근거", className="danger-button small", disabled=True)])], className="panel-header"),
                     html.Div(
                         [
-                            html.Div([html.Strong("순위"), html.Strong("입력변수"), html.Strong("평균 영향"), html.Strong("검증 방식"), html.Strong("영향 방향"), html.Strong("상태")], className="data-row header-row"),
-                            *[
-                                html.Div([html.Span(rank), html.Span(condition), html.Strong(current, className="danger-text"), html.Span(reference), html.Span("↑  " + direction, className="danger-text"), status_pill(status, tone)], className="data-row")
-                                for rank, condition, current, reference, direction, status, tone in rows
-                            ],
+                            html.Div([html.Strong("순위"), html.Strong("입력변수"), html.Strong("평균 기여"), html.Strong("계산 방식"), html.Strong("영향 방향"), html.Strong("상태")], className="data-row header-row"),
+                            html.Div(feature_table_rows(rows), id="feature-rows-container", className="feature-rows"),
                         ],
                         className="data-table condition-table",
                     ),
                 ],
                 className="panel table-panel",
             ),
-            simulation_note("Test permutation importance는 트리 모델의 전역 민감도입니다. LSTM·TCN의 시점별 설명값은 현재 산출물에 포함되지 않습니다."),
+            simulation_note("시점 기여도는 저장된 두 트리 모델의 로컬 TreeSHAP입니다. 최종 LSTM+TCN 앙상블의 설명값이나 인과효과를 뜻하지 않습니다."),
         ],
         className="page-content industrial-page causes-control-page",
     )

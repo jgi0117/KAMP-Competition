@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from dash import Dash, Input, Output, State, ctx, dcc, html, no_update
+from dash import ALL, Dash, Input, Output, State, ctx, dcc, html, no_update
 
-from layouts import action_table, page_for, sidebar, topbar
-from data import ACTION_ROWS, SUMMARY, cause_figure, energy_figure, replay_timestamp
+from layouts import action_table, feature_table_rows, page_for, sidebar, topbar
+from data import ACTION_ROWS, SUMMARY, cause_figure, energy_figure, feature_rows, importance_figure, replay_timestamp
 
 
 app = Dash(__name__, suppress_callback_exceptions=True, title="AI 전력 피크 조기경보 시스템")
@@ -17,7 +17,7 @@ app.layout = html.Div(
         dcc.Interval(id="simulation-interval", interval=5_000, n_intervals=0, disabled=False),
         dcc.Store(id="viewport-width-store"),
         dcc.Store(id="home-range-store", data=6),
-        dcc.Store(id="selected-time-store", storage_type="session"),
+        dcc.Store(id="replay-time-store"),
         dcc.Store(id="action-records-store", data=ACTION_ROWS, storage_type="session"),
         dcc.Store(id="alarm-muted-store", data=True, storage_type="session"),
         html.Div(id="alarm-audio-sink", hidden=True),
@@ -62,10 +62,23 @@ def toggle_sidebar(n_clicks: int, viewport_width: int | None, current_class: str
     return "sidebar collapsed", "main-shell sidebar-collapsed", "›", "사이드바 펼치기"
 
 
-@app.callback(Output("simulation-time", "children"), Input("simulation-interval", "n_intervals"))
+@app.callback(
+    Output("simulation-time", "children"),
+    Output("replay-time-store", "data"),
+    Input("simulation-interval", "n_intervals"),
+)
 def update_simulation_time(n_intervals: int):
     timestamp = replay_timestamp(n_intervals)
-    return f"Test 재생 {timestamp:%m/%d %H:%M}"
+    return f"Test 재생 {timestamp:%m/%d %H:%M}", str(timestamp)
+
+
+@app.callback(
+    Output({"type": "page-replay-time", "page": ALL}, "data"),
+    Input("replay-time-store", "data"),
+    State({"type": "page-replay-time", "page": ALL}, "id"),
+)
+def sync_page_replay_time(replay_time: str | None, page_stores: list[dict]):
+    return [replay_time for _ in (page_stores or [])]
 
 
 app.clientside_callback(
@@ -142,48 +155,47 @@ app.clientside_callback(
     Output("range-6h", "className"),
     Output("range-12h", "className"),
     Output("range-24h", "className"),
-    Input("range-6h", "n_clicks"),
-    Input("range-12h", "n_clicks"),
-    Input("range-24h", "n_clicks"),
-    Input("simulation-interval", "n_intervals"),
-    State("home-range-store", "data"),
-)
-def update_energy_range(n6: int, n12: int, n24: int, n_intervals: int, current_hours: int):
-    selected = {"range-6h": 6, "range-12h": 12, "range-24h": 24}.get(ctx.triggered_id, current_hours or 6)
-    classes = ["filter-chip active" if selected == value else "filter-chip" for value in (6, 12, 24)]
-    return energy_figure(selected, n_intervals), selected, *classes
-
-
-@app.callback(
     Output("home-cause-chart", "figure"),
     Output("home-cause-title", "children"),
     Output("home-analysis-time", "children"),
     Output("home-cause-insight", "children"),
-    Output("selected-time-store", "data"),
+    Input("range-6h", "n_clicks"),
+    Input("range-12h", "n_clicks"),
+    Input("range-24h", "n_clicks"),
     Input("energy-chart", "clickData"),
-    prevent_initial_call=True,
+    Input({"type": "page-replay-time", "page": "home"}, "data"),
+    State("home-range-store", "data"),
 )
-def update_home_cause(click_data: dict | None):
-    if not click_data or not click_data.get("points"):
-        return no_update, no_update, no_update, no_update, no_update
-    raw_time = str(click_data["points"][0].get("x", ""))
-    try:
-        timestamp = raw_time.replace("T", " ")[:16]
-        label = timestamp[5:16]
-    except (TypeError, IndexError):
-        label = raw_time
+def update_energy_range(n6: int, n12: int, n24: int, click_data: dict | None,
+                        replay_time: str | None, current_hours: int):
+    range_by_id = {"range-6h": 6, "range-12h": 12, "range-24h": 24}
+    selected = range_by_id.get(ctx.triggered_id, current_hours or 6) if isinstance(ctx.triggered_id, str) else (current_hours or 6)
+    classes = ["filter-chip active" if selected == value else "filter-chip" for value in (6, 12, 24)]
+    timestamp = replay_time or replay_timestamp(0)
+    if ctx.triggered_id == "energy-chart" and click_data and click_data.get("points"):
+        timestamp = str(click_data["points"][0].get("x", timestamp)).replace("T", " ")[:19]
+    label = f"{timestamp:%m/%d %H:%M}" if hasattr(timestamp, "strftime") else timestamp[5:16]
     return (
-        cause_figure(470, label),
-        f"{label} 모델 변수 중요도 참고",
-        f"{label} 선택 · Test 전역 기준",
-        "시점별 SHAP은 저장되지 않아 XGBoost·LightGBM의 Test permutation importance를 표시합니다.",
-        label,
+        energy_figure(selected, as_of=timestamp), selected, *classes,
+        cause_figure(470, timestamp),
+        f"{label} 시점별 트리 모델 기여도",
+        f"{label} 입력",
+        "저장된 XGBoost·LightGBM의 168시간 입력 TreeSHAP을 변수별로 합산했습니다.",
     )
 
 
-@app.callback(Output("cause-detail-chart", "figure"), Input("selected-time-store", "data"))
-def update_cause_detail(selected_time: str | None):
-    return cause_figure(360, selected_time) if selected_time else cause_figure(360)
+@app.callback(
+    Output("cause-detail-chart", "figure"),
+    Output("cause-average-chart", "figure"),
+    Output("feature-rows-container", "children"),
+    Input({"type": "page-replay-time", "page": "causes"}, "data"),
+)
+def update_cause_detail(replay_time: str | None):
+    return (
+        cause_figure(360, replay_time),
+        importance_figure(replay_time),
+        feature_table_rows(feature_rows(replay_time)),
+    )
 
 
 @app.callback(

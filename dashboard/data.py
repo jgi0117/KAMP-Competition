@@ -1,15 +1,22 @@
-"""Validated held-out Test evidence for the five base-nine models."""
+"""Validated held-out Test evidence and local tree explanations."""
 
+from functools import lru_cache
+import json
 from pathlib import Path
+import sys
 
+import joblib
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 PEAK_KW = 177.0
 CONTROL_SIGMA = 3.0
+TREE_LOOKBACK = 168
 
 
 def load_evidence():
@@ -104,8 +111,8 @@ def energy_frame(as_of: pd.Timestamp | None = None, hours: int = 24) -> pd.DataF
     return TEST.loc[TEST.datetime.between(start, as_of)].copy()
 
 
-def energy_figure(hours: int = 6, replay_step: int = 0) -> go.Figure:
-    as_of = replay_timestamp(replay_step)
+def energy_figure(hours: int = 6, replay_step: int = 0, as_of=None) -> go.Figure:
+    as_of = pd.Timestamp(as_of) if as_of is not None else replay_timestamp(replay_step)
     frame = energy_frame(as_of, hours)
     fig = go.Figure()
     fig.add_trace(go.Scatter(
@@ -160,40 +167,136 @@ def _importance() -> pd.DataFrame:
     return frame
 
 
+@lru_cache(maxsize=1)
+def _tree_explanation_assets():
+    """Load the exact tree-model inputs and saved fitted models once."""
+    from neural.core import data_pipeline as dp
+
+    manifest = json.loads((ROOT / "results/tree_models/manifest.json").read_text(encoding="utf-8"))
+    features = list(manifest["feature_columns"])
+    if features != list(dp.FEATURE_COLUMNS) or int(manifest["lookback"]) != TREE_LOOKBACK:
+        raise ValueError("Tree explanation contract differs from the saved model manifest")
+    history = dp.load_data(ROOT / "data/okm_cleaned_2021.csv")
+    models = {
+        name: joblib.load(ROOT / f"results/tree_models/models/{name}_seed42.joblib")
+        for name in ("xgboost", "lightgbm")
+    }
+    return history, features, models
+
+
+def _explanation_timestamp(value=None) -> pd.Timestamp:
+    if value is None or value == "":
+        return pd.Timestamp(REFERENCE_TIME)
+    if isinstance(value, pd.Timestamp):
+        timestamp = value
+    else:
+        text = str(value).replace("T", " ")
+        if len(text) <= 11 and "/" in text:
+            text = f"{TEST_START.year}/{text}"
+        timestamp = pd.Timestamp(text)
+    if not TEST.datetime.eq(timestamp).any():
+        raise ValueError(f"Selected explanation time is outside the held-out Test set: {timestamp}")
+    return timestamp
+
+
+@lru_cache(maxsize=256)
+def local_tree_importance(selected_time=None) -> pd.DataFrame:
+    """Return grouped native TreeSHAP contributions for one Test timestamp.
+
+    Each tree model consumes 168 hourly lags × nine features. Native per-cell
+    contributions are summed over the 168 lags so the nine displayed feature
+    values remain additive to the model prediction together with the bias.
+    """
+    import xgboost as xgb
+
+    timestamp = _explanation_timestamp(selected_time)
+    history, features, models = _tree_explanation_assets()
+    positions = np.flatnonzero(history.datetime.to_numpy() == np.datetime64(timestamp))
+    if len(positions) != 1 or positions[0] < TREE_LOOKBACK:
+        raise ValueError(f"Cannot build a {TREE_LOOKBACK}-hour window for {timestamp}")
+    position = int(positions[0])
+    window = history.iloc[position - TREE_LOOKBACK:position][features].to_numpy(dtype=np.float32)
+    flattened = np.ascontiguousarray(window.reshape(1, -1))
+
+    xgboost_model = models["xgboost"]
+    lightgbm_model = models["lightgbm"]
+    contributions = {
+        "xgboost": xgboost_model.get_booster().predict(
+            xgb.DMatrix(flattened), pred_contribs=True
+        )[0],
+        "lightgbm": np.asarray(lightgbm_model.predict(flattened, pred_contrib=True))[0],
+    }
+    predictions = {
+        "xgboost": float(xgboost_model.predict(flattened)[0]),
+        "lightgbm": float(lightgbm_model.predict(flattened)[0]),
+    }
+    rows = []
+    for model, values in contributions.items():
+        feature_values, bias = values[:-1], float(values[-1])
+        grouped = feature_values.reshape(TREE_LOOKBACK, len(features)).sum(axis=0)
+        if not np.isclose(float(grouped.sum() + bias), predictions[model], atol=1e-3):
+            raise ValueError(f"{model} TreeSHAP contributions do not reconcile to its prediction")
+        rows.extend(
+            {"model": model, "feature": feature, "contribution_kw": float(contribution),
+             "latest_value": float(window[-1, index]), "prediction_kw": predictions[model],
+             "bias_kw": bias, "timestamp": timestamp}
+            for index, (feature, contribution) in enumerate(zip(features, grouped))
+        )
+    return pd.DataFrame(rows)
+
+
 def cause_figure(height: int = 330, selected_time: str | None = None) -> go.Figure:
-    frame = _importance().pivot(index="feature", columns="model", values="rmse_increase_mean").fillna(0)
-    frame["mean"] = frame.mean(axis=1)
-    frame = frame.sort_values("mean").tail(9)
+    timestamp = _explanation_timestamp(selected_time)
+    frame = local_tree_importance(timestamp).pivot(
+        index="feature", columns="model", values="contribution_kw"
+    ).fillna(0)
+    frame["magnitude"] = frame[["xgboost", "lightgbm"]].abs().mean(axis=1)
+    frame = frame.sort_values("magnitude").tail(9)
     fig = go.Figure()
     for model, color in (("xgboost", BLUE), ("lightgbm", TEAL)):
         fig.add_trace(go.Bar(
             x=frame.get(model, pd.Series(0, index=frame.index)), y=frame.index,
             name=model, orientation="h", marker_color=color,
-            hovertemplate="%{y}<br>RMSE 증가 %{x:.2f} kW<extra>" + model + "</extra>",
+            hovertemplate="%{y}<br>예측 기여 %{x:+.2f} kW<extra>" + model + "</extra>",
         ))
     fig.add_vline(x=0, line_color=MUTED, line_width=1)
-    fig.update_xaxes(title="순열 교란 시 RMSE 증가 (kW)")
+    fig.update_xaxes(title="해당 시점 예측 기여 (kW)", zeroline=True, zerolinecolor=MUTED)
     fig.update_layout(barmode="group")
-    if selected_time:
-        fig.add_annotation(
-            x=1, y=1.12, xref="paper", yref="paper",
-            text=f"선택 시점 {selected_time} · 전역 중요도 참고",
-            showarrow=False, font={"color": TEAL, "size": 12},
-        )
     return _base_layout(fig, height, {"l": 125, "r": 20, "t": 30, "b": 45})
 
 
-def importance_figure() -> go.Figure:
-    frame = _importance().groupby("feature", as_index=False).agg(
-        importance=("rmse_increase_mean", "mean")
-    ).sort_values("importance").tail(9)
+def importance_figure(selected_time=None) -> go.Figure:
+    frame = local_tree_importance(_explanation_timestamp(selected_time)).groupby(
+        "feature", as_index=False
+    ).agg(importance=("contribution_kw", "mean"))
+    frame["magnitude"] = frame.importance.abs()
+    frame = frame.sort_values("magnitude").tail(9)
     fig = go.Figure(go.Bar(
         x=frame.importance, y=frame.feature, orientation="h",
-        marker_color=[RED if value > 10 else TEAL for value in frame.importance],
-        text=[f"{value:.2f}" for value in frame.importance], textposition="auto",
+        marker_color=[RED if value > 0 else BLUE for value in frame.importance],
+        text=[f"{value:+.2f}" for value in frame.importance],
+        textposition=["inside" if abs(value) >= 1 else "outside" for value in frame.importance],
+        insidetextanchor="end",
+        cliponaxis=False,
     ))
-    fig.update_xaxes(title="평균 RMSE 증가 (kW)")
-    return _base_layout(fig, 330, {"l": 125, "r": 20, "t": 18, "b": 45})
+    fig.update_xaxes(title="두 트리 모델 평균 예측 기여 (kW)", zeroline=True, zerolinecolor=MUTED)
+    return _base_layout(fig, 330, {"l": 125, "r": 55, "t": 18, "b": 45})
+
+
+def feature_rows(selected_time=None) -> list[tuple[str, ...]]:
+    frame = local_tree_importance(_explanation_timestamp(selected_time)).groupby(
+        "feature", as_index=False
+    ).agg(importance=("contribution_kw", "mean"))
+    frame["magnitude"] = frame.importance.abs()
+    frame = frame.sort_values("magnitude", ascending=False).head(3)
+    return [
+        (
+            str(rank), row.feature, f"{row.importance:+.2f} kW", "TreeSHAP 합산",
+            "예측 증가" if row.importance >= 0 else "예측 감소", "계산 완료",
+            "danger" if rank == 1 else "caution",
+        )
+        for rank, row in enumerate(frame.itertuples(), start=1)
+    ]
 
 
 def model_comparison_figure() -> go.Figure:
@@ -237,21 +340,7 @@ SUMMARY = {
     "test_start": TEST_START, "test_end": TEST_END, "test_hours": len(TEST),
 }
 
-_FEATURE_SUMMARY = _importance().groupby("feature", as_index=False).agg(
-    importance=("rmse_increase_mean", "mean")
-).sort_values("importance", ascending=False).head(3)
-FEATURE_ROWS = [
-    (
-        str(rank),
-        row.feature,
-        f"{row.importance:.2f} kW",
-        "순열 교란",
-        "RMSE 증가" if row.importance >= 0 else "RMSE 감소",
-        "검증 완료",
-        "danger" if rank == 1 else "caution",
-    )
-    for rank, row in enumerate(_FEATURE_SUMMARY.itertuples(), start=1)
-]
+FEATURE_ROWS = feature_rows()
 
 
 def _action_rows() -> list[dict]:

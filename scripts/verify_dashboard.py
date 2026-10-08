@@ -15,6 +15,7 @@ from werkzeug.serving import make_server
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "dashboard"))
 from app import app  # noqa: E402
+from data import feature_rows, local_tree_importance  # noqa: E402
 
 
 ROUTES = {
@@ -46,6 +47,12 @@ def assert_no_horizontal_overflow(page) -> None:
 
 
 def main() -> None:
+    first_local = local_tree_importance("2021-08-17 00:00")
+    later_local = local_tree_importance("2021-08-17 12:00")
+    assert len(first_local) == len(later_local) == 18
+    assert not first_local.contribution_kw.equals(later_local.contribution_kw)
+    assert feature_rows("2021-08-17 00:00") != feature_rows("2021-08-17 12:00")
+
     output_dir = Path(tempfile.mkdtemp(prefix="dashboard-validation-"))
     server = make_server("127.0.0.1", 0, app.server)
     thread = Thread(target=server.serve_forever, daemon=True)
@@ -78,6 +85,31 @@ def main() -> None:
             page.locator("#close-action-drawer").click()
             expect(page.locator("#action-drawer")).not_to_have_class(re.compile(r"\bopen\b"))
 
+            # Reproduce the original failure path: navigate from the home page,
+            # remain on /causes for another global replay tick, and verify all
+            # three local-explanation views change without console errors.
+            page.locator('a[href="/causes"]').first.click()
+            page.wait_for_url(base + "/causes")
+            page.locator("#cause-detail-chart .js-plotly-plot").wait_for()
+            before_chart = page.locator("#cause-detail-chart .js-plotly-plot").evaluate(
+                "el => el.data.map(trace => trace.x)"
+            )
+            before_average = page.locator("#cause-average-chart .js-plotly-plot").evaluate(
+                "el => el.data.map(trace => trace.x)"
+            )
+            before_rows = page.locator("#feature-rows-container").inner_text()
+            page.wait_for_timeout(5_500)
+            after_chart = page.locator("#cause-detail-chart .js-plotly-plot").evaluate(
+                "el => el.data.map(trace => trace.x)"
+            )
+            after_average = page.locator("#cause-average-chart .js-plotly-plot").evaluate(
+                "el => el.data.map(trace => trace.x)"
+            )
+            after_rows = page.locator("#feature-rows-container").inner_text()
+            assert before_chart != after_chart, "Model-specific local contributions did not update"
+            assert before_average != after_average, "Averaged local contributions did not update"
+            assert before_rows != after_rows, "Top-three local contribution rows did not update"
+
             page.set_viewport_size({"width": 1280, "height": 900})
             page.goto(base + "/", wait_until="networkidle")
             assert_no_horizontal_overflow(page)
@@ -89,7 +121,7 @@ def main() -> None:
 
     if errors:
         raise RuntimeError(f"Browser console errors: {errors}")
-    print(f"Dashboard routes and interactions passed. Screenshots: {output_dir}")
+    print(f"Dashboard routes, interactions, and dynamic TreeSHAP updates passed. Screenshots: {output_dir}")
 
 
 if __name__ == "__main__":
