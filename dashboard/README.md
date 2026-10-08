@@ -7,6 +7,7 @@
 프로젝트 루트에서:
 
 ```powershell
+python -m pip install -r requirements.txt
 python dashboard/app.py
 ```
 

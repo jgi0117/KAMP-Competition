@@ -174,7 +174,7 @@ POWER_DATA_PATH=data/inference_input.parquet
 - KPI, 위험 배너, 차트, 모델 성능표가 같은 모델 출력에서 파생된다.
 - 결측·지연·중복·시간대 오류를 의도적으로 넣었을 때 오류 상태로 표시된다.
 - 학습 데이터에 test 기간의 미래 정보가 포함되지 않았음을 확인한다.
-- 새 환경에서 `environment.yml` 또는 `dashboard/requirements.txt`로 재현된다.
+- 새 환경에서 루트의 `requirements.txt`로 재현된다.
 - 브라우저 폭 1280px와 1920px에서 주요 수치와 표가 잘리지 않는다.
 
 ## 6. 현재 알려진 경계
