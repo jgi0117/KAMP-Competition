@@ -252,8 +252,8 @@ def home_page():
                                 [
                                     html.Div(
                                         [
-                                            html.Div([html.H3("Test 전력 재생", className="section-title"), html.Span("REPLAY · 1시간 간격", className="live-label")], className="panel-title-row"),
-                                            html.P("실측 / 앙상블 예측 / 검증 잔차 3σ 관리구간", className="section-subtitle"),
+                                            html.Div([html.H3("Test 전력 재생", className="section-title"), html.Span("REPLAY · 1시간 선행", className="live-label")], className="panel-title-row"),
+                                            html.P("실측(현재까지) / 앙상블 1시간 선행 예측(t+1) / 검증 잔차 3σ 관리구간", className="section-subtitle"),
                                         ]
                                     ),
                                     html.Div(

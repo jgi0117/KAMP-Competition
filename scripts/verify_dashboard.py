@@ -8,6 +8,7 @@ import sys
 import tempfile
 from threading import Thread
 
+import pandas as pd
 from playwright.sync_api import expect, sync_playwright
 from werkzeug.serving import make_server
 
@@ -15,7 +16,7 @@ from werkzeug.serving import make_server
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "dashboard"))
 from app import app  # noqa: E402
-from data import feature_rows, local_tree_importance  # noqa: E402
+from data import TEST, energy_figure, feature_rows, local_tree_importance, replay_timestamp  # noqa: E402
 
 
 ROUTES = {
@@ -47,6 +48,20 @@ def assert_no_horizontal_overflow(page) -> None:
 
 
 def main() -> None:
+    as_of = replay_timestamp(0)
+    energy = energy_figure(6, as_of=as_of)
+    traces = {trace.name: trace for trace in energy.data}
+    actual = traces["실측 전력 (현재까지)"]
+    forecast = traces["앙상블 1시간 선행 예측"]
+    actual_end = pd.Timestamp(max(actual.x))
+    forecast_end = pd.Timestamp(max(forecast.x))
+    assert actual_end == as_of
+    assert forecast_end == as_of + pd.Timedelta(hours=1)
+    assert len(forecast.x) == len(actual.x) + 1
+    expected_next = TEST.loc[TEST.datetime.eq(forecast_end), "predicted"]
+    assert len(expected_next) == 1
+    assert abs(float(forecast.y[-1]) - float(expected_next.iloc[0])) < 1e-9
+
     first_local = local_tree_importance("2021-08-17 00:00")
     later_local = local_tree_importance("2021-08-17 12:00")
     assert len(first_local) == len(later_local) == 18
@@ -77,9 +92,31 @@ def main() -> None:
                 page.screenshot(path=str(output_dir / f"{name}-1920.png"), full_page=True)
 
             page.goto(base + "/", wait_until="networkidle")
+            endpoints = page.locator("#energy-chart .js-plotly-plot").evaluate(
+                """el => {
+                    const actual = el.data.find(trace => trace.name === '실측 전력 (현재까지)');
+                    const forecast = el.data.find(trace => trace.name === '앙상블 1시간 선행 예측');
+                    return {
+                        actual: new Date(actual.x.at(-1)).getTime(),
+                        forecast: new Date(forecast.x.at(-1)).getTime()
+                    };
+                }"""
+            )
+            assert endpoints["forecast"] - endpoints["actual"] == 3_600_000
             page.locator("#range-12h").click()
             page.wait_for_timeout(300)
             assert "active" in (page.locator("#range-12h").get_attribute("class") or "")
+            endpoints_12h = page.locator("#energy-chart .js-plotly-plot").evaluate(
+                """el => {
+                    const actual = el.data.find(trace => trace.name === '실측 전력 (현재까지)');
+                    const forecast = el.data.find(trace => trace.name === '앙상블 1시간 선행 예측');
+                    return {
+                        actual: new Date(actual.x.at(-1)).getTime(),
+                        forecast: new Date(forecast.x.at(-1)).getTime()
+                    };
+                }"""
+            )
+            assert endpoints_12h["forecast"] - endpoints_12h["actual"] == 3_600_000
             page.locator("#open-action-drawer").click()
             expect(page.locator("#action-drawer")).to_have_class(re.compile(r"\bopen\b"))
             page.locator("#close-action-drawer").click()
@@ -121,7 +158,10 @@ def main() -> None:
 
     if errors:
         raise RuntimeError(f"Browser console errors: {errors}")
-    print(f"Dashboard routes, interactions, and dynamic TreeSHAP updates passed. Screenshots: {output_dir}")
+    print(
+        "Dashboard routes, one-hour forecast alignment, interactions, and "
+        f"dynamic TreeSHAP updates passed. Screenshots: {output_dir}"
+    )
 
 
 if __name__ == "__main__":

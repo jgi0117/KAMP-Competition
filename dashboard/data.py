@@ -17,6 +17,7 @@ if str(ROOT) not in sys.path:
 PEAK_KW = 177.0
 CONTROL_SIGMA = 3.0
 TREE_LOOKBACK = 168
+FORECAST_HORIZON_HOURS = 1
 
 
 def load_evidence():
@@ -100,48 +101,71 @@ def _base_layout(fig: go.Figure, height: int, margin: dict | None = None) -> go.
 
 
 def replay_timestamp(step: int = 0) -> pd.Timestamp:
-    available = len(TEST) - REPLAY_START_INDEX
+    # Keep one held-out row ahead of the replay clock so the chart can expose
+    # the prediction that is valid at t+1 without revealing its actual value.
+    available = len(TEST) - REPLAY_START_INDEX - FORECAST_HORIZON_HOURS
     index = REPLAY_START_INDEX + (max(0, int(step or 0)) % available)
     return pd.Timestamp(TEST.iloc[index].datetime)
 
 
-def energy_frame(as_of: pd.Timestamp | None = None, hours: int = 24) -> pd.DataFrame:
+def energy_frame(
+    as_of: pd.Timestamp | None = None,
+    hours: int = 24,
+    horizon_hours: int = 0,
+) -> pd.DataFrame:
     as_of = pd.Timestamp(as_of or REFERENCE_TIME)
     start = as_of - pd.Timedelta(hours=hours)
-    return TEST.loc[TEST.datetime.between(start, as_of)].copy()
+    end = as_of + pd.Timedelta(hours=horizon_hours)
+    return TEST.loc[TEST.datetime.between(start, end)].copy()
 
 
 def energy_figure(hours: int = 6, replay_step: int = 0, as_of=None) -> go.Figure:
     as_of = pd.Timestamp(as_of) if as_of is not None else replay_timestamp(replay_step)
-    frame = energy_frame(as_of, hours)
+    forecast_end = as_of + pd.Timedelta(hours=FORECAST_HORIZON_HOURS)
+    actual_frame = energy_frame(as_of, hours)
+    forecast_frame = energy_frame(as_of, hours, FORECAST_HORIZON_HOURS)
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=frame.datetime, y=frame.actual, name="실측 전력", mode="lines+markers",
+        x=actual_frame.datetime, y=actual_frame.actual, name="실측 전력 (현재까지)", mode="lines+markers",
         line={"color": TEXT, "width": 2.4}, marker={"size": 4},
+        hovertemplate="실측 시각 %{x|%m/%d %H:%M}<br>%{y:.1f} kW<extra></extra>",
     ))
     fig.add_trace(go.Scatter(
-        x=frame.datetime, y=frame.predicted, name="앙상블 예측", mode="lines",
+        x=forecast_frame.datetime, y=forecast_frame.predicted,
+        name="앙상블 1시간 선행 예측", mode="lines",
         line={"color": TEAL, "width": 2.2},
+        hovertemplate="예측 대상 시각 %{x|%m/%d %H:%M}<br>%{y:.1f} kW · 1시간 선행<extra></extra>",
     ))
     fig.add_trace(go.Scatter(
-        x=frame.datetime, y=frame.control_lower, name="3σ 관리하한", mode="lines",
+        x=forecast_frame.datetime, y=forecast_frame.control_lower, name="3σ 관리하한", mode="lines",
         line={"color": "rgba(76,141,255,0.55)", "width": 1, "dash": "dot"},
+        hovertemplate="%{x|%m/%d %H:%M}<br>하한 %{y:.1f} kW<extra></extra>",
     ))
     fig.add_trace(go.Scatter(
-        x=frame.datetime, y=frame.control_upper, name="3σ 관리상한", mode="lines",
+        x=forecast_frame.datetime, y=forecast_frame.control_upper, name="3σ 관리상한", mode="lines",
         line={"color": "rgba(76,141,255,0.75)", "width": 1, "dash": "dot"},
         fill="tonexty", fillcolor="rgba(76,141,255,0.08)",
+        hovertemplate="%{x|%m/%d %H:%M}<br>상한 %{y:.1f} kW<extra></extra>",
     ))
-    alerts = frame.loc[frame.alert]
+    alerts = forecast_frame.loc[forecast_frame.alert]
     fig.add_trace(go.Scatter(
-        x=alerts.datetime, y=alerts.actual, name="피크 경보", mode="markers",
+        x=alerts.datetime, y=alerts.predicted, name="피크 경보", mode="markers",
         marker={"color": RED, "size": 8, "symbol": "diamond"},
+        hovertemplate="경보 대상 시각 %{x|%m/%d %H:%M}<br>예측 %{y:.1f} kW<extra></extra>",
     ))
-    misses = frame.loc[frame.outcome.eq("FN")]
+    misses = actual_frame.loc[actual_frame.outcome.eq("FN")]
     fig.add_trace(go.Scatter(
         x=misses.datetime, y=misses.actual, name="미탐지", mode="markers",
         marker={"color": AMBER, "size": 13, "symbol": "x"},
     ))
+    next_forecast = forecast_frame.loc[forecast_frame.datetime.eq(forecast_end)]
+    if not next_forecast.empty:
+        fig.add_trace(go.Scatter(
+            x=next_forecast.datetime, y=next_forecast.predicted,
+            name="다음 1시간 예측", mode="markers",
+            marker={"color": TEAL, "size": 11, "symbol": "circle-open", "line": {"width": 2}},
+            hovertemplate="현재 시각에 확보된 다음 1시간 예측<br>%{x|%m/%d %H:%M} · %{y:.1f} kW<extra></extra>",
+        ))
     fig.add_hline(
         y=PEAK_KW, line_dash="dash", line_color=RED, line_width=1.3,
         annotation_text=f"피크 기준 {PEAK_KW:.0f} kW",
@@ -149,6 +173,15 @@ def energy_figure(hours: int = 6, replay_step: int = 0, as_of=None) -> go.Figure
     )
     fig.add_vline(
         x=as_of, line_color="#7C929F", line_width=1, line_dash="dot",
+    )
+    fig.add_vrect(
+        x0=as_of, x1=forecast_end, line_width=0,
+        fillcolor="rgba(33,199,186,0.08)", layer="below",
+    )
+    fig.add_annotation(
+        x=forecast_end, y=1, xref="x", yref="paper", text="1시간 예측 구간",
+        showarrow=False, xanchor="right", yanchor="bottom",
+        font={"color": TEAL, "size": 11}, bgcolor="rgba(12,24,34,0.78)",
     )
     fig.update_yaxes(title="전력 (kW)", rangemode="tozero")
     fig.update_xaxes(tickformat="%H:%M\n%m/%d")
