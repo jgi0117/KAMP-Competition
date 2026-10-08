@@ -1,5 +1,56 @@
-# OKM Test 결과 대시보드
+# AI 전력 피크 조기경보 대시보드
 
-저장소 루트에서 `python -m pip install -r requirements.txt`로 공통 환경을 설치한 후 `python dashboard/app.py`로 실행합니다.
+기존 관제형 Dash UI를 유지하면서 `submission-clean` 브랜치의 저장된 Test 예측, 모델 비교 결과, 경보 설정, 변수 중요도를 연결한 검증용 대시보드다. 화면의 재생 기능은 실시간 추론이 아니라 2021년 홀드아웃 703시간을 한 시간씩 재생한다.
 
-2021년 홀드아웃 Test 703시간에 저장된 예측을 표시합니다. 최적 후보인 LSTM·TCN 가중 앙상블과 다른 네 후보의 RMSE를 비교합니다. 신경망 가중치가 보존되지 않았으므로 이 화면은 신규 데이터 추론 또는 실시간 운영 대시보드가 아닙니다. 피크 기준 177 kW와 경보 확률 기준값은 저장된 검증 결과에서 읽습니다.
+## 실행
+
+프로젝트 루트에서:
+
+```powershell
+python dashboard/app.py
+```
+
+브라우저에서 `http://127.0.0.1:8050`을 연다.
+
+## 구현 범위
+
+- 왼쪽 고정 사이드바와 4개 화면 라우팅
+- 사이드바 접기·펼치기와 축소 상태 아이콘 탐색
+- 저장된 Test 실측·예측·3σ 관리한계와 피크 경보의 Plotly 시계열
+- XGBoost와 LightGBM의 Test permutation importance 비교
+- 동일 703시간 Test 구간의 실제 후보 모델 성능 비교
+- 저장된 예측의 피크 경보 지표와 FN·FP 오류 히트맵
+- 조치 관리 표와 입력 패널
+- 6·12·24시간 전력 범위와 선택 시점의 기여 요인 연동
+- 5초마다 저장된 Test 시각을 1시간 진행하는 재생·일시정지
+- 사용자 활성화 방식의 위험 경보음
+- AI 추천과 사용자 선택을 분리한 조치 등록 드로어
+- 세션 내 조치 목록 반영
+- 다크 모드 전용 테마
+- 노트북·대형 모니터·소형 화면 대응
+
+## 데이터 연결
+
+- 후보 모델 비교: `results/model_comparison.csv`
+- 최종 앙상블 예측: `neural/results/final/test_predictions.csv`
+- 경보 설정·가중치: `neural/results/final/alert_settings.csv`, `ensemble_weights.csv`
+- 변수 중요도·시간대 오류: `docs/report/evidence/*.csv`
+- 앱 시작 시 필수 컬럼과 데이터 범위를 검증하며, 누락 시 임의 값으로 대체하지 않는다.
+
+세부 데이터 계약과 운영 전환 범위는
+[`INTEGRATION_GUIDE.md`](INTEGRATION_GUIDE.md)를 확인한다. 현재 산출물의
+교체 위치, 필수 컬럼, 시간 단위, 모델 출력 계약과 검증 순서를 정리해 두었다.
+
+## 현재 상호작용 범위
+
+- 작동: 화면 이동, 반응형 사이드바, Test 재생·일시정지, 경보음, 시간 범위 선택, 변수 중요도, 오류 사례 검토·세션 메모
+- 미연결: 실시간 모델 추론, 스트리밍 설비 데이터, CSV 내보내기, 영구 저장
+- 변수 중요도는 트리 모델의 전역 permutation importance이며 시점별 SHAP 또는 인과효과가 아니다.
+
+## 자동 검증
+
+```powershell
+python scripts/verify_dashboard.py
+```
+
+4개 경로, 그래프, 12시간 선택, 검토 서랍, 1920/1280 가로 넘침과 브라우저 콘솔 오류를 확인한다.

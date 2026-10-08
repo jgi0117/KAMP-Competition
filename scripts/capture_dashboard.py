@@ -27,8 +27,8 @@ def main():
                 browser = playwright.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": 1920, "height": 1000}, device_scale_factor=1)
             page.goto(f"http://127.0.0.1:{server.server_port}/", wait_until="networkidle")
-            page.locator("#timeline .js-plotly-plot").wait_for()
-            page.locator("#ranking .js-plotly-plot").wait_for()
+            page.locator("#energy-chart .js-plotly-plot").wait_for()
+            page.locator("#home-cause-chart .js-plotly-plot").wait_for()
             page.screenshot(path=str(output), full_page=True)
             browser.close()
     finally:
